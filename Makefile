@@ -2,7 +2,7 @@ VERSION = 3
 PATCHLEVEL = 0
 SUBLEVEL = 21
 EXTRAVERSION =
-NAME = Sneaky Weasel
+NAME = Jaded Jackalope
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"

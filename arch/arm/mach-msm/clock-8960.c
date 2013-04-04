@@ -3586,7 +3586,7 @@ static struct rcg_clk vcap_clk = {
 		.dbg_name = "vcap_clk",
 		.ops = &clk_ops_rcg,
 		.depends = &vcap_axi_clk.c,
-		VDD_DIG_FMAX_MAP2(LOW, 100000000, NOMINAL, 200000000),
+		VDD_DIG_FMAX_MAP2(LOW, 100000000, NOMINAL, 220000000),
 		CLK_INIT(vcap_clk.c),
 	},
 };
