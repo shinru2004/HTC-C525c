@@ -17,12 +17,12 @@ date=$(date +%Y%m%d-%H:%M:%S)
 [ -d ~/logs ] || mkdir -p ~/logs
 
 # Build kernel
-make ARCH=arm |  tee ~/logs/build.txt
+make ARCH=arm | tee ~/logs/$version.txt
 
 echo "Popped kernel available in arch/arm/boot"
 
 # Build Modules and output build log
-time make -j8 2>&1 | tee ~/logs/$version.txt
+time make -j8 2>&1
 echo "Build Log is available in ~/logs"
 echo "Done"
 

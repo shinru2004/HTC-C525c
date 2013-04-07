@@ -328,11 +328,6 @@ static void __init size_pmem_devices(void)
 #endif
 }
 
-static void __init reserve_memory_for(struct android_pmem_platform_data *p)
-{
-	msm8930_reserve_table[p->memory_type].size += p->size;
-}
-
 static void __init reserve_pmem_memory(void)
 {
 #ifdef CONFIG_ANDROID_PMEM
@@ -2993,7 +2988,7 @@ static struct platform_device *common_devices[] __initdata = {
 	&msm8930_android_pmem_device,
 	&msm8930_android_pmem_adsp_device,
 #endif
-	&msm8930_android_pmem_audio_device,
+
 #endif
 	&msm8930_fmem_device,
 	&msm_device_bam_dmux,
