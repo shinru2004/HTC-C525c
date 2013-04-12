@@ -20,7 +20,6 @@
 #include <linux/keyreset.h>
 #include <asm/mach-types.h>
 #include <linux/gpio.h>
-#include <linux/delay.h>
 #include <mach/gpio.h>
 
 #include "board-k2_cl.h"
@@ -72,23 +71,6 @@ static void k2_cl_setup_input_gpio(void)
 	config_gpio_table(inputs_gpio_table, ARRAY_SIZE(inputs_gpio_table));
 }
 
-static void k2_cl_clear_hw_reset(void)
-{
-	uint32_t hw_clr_gpio_table[] = {
-		GPIO_CFG(MSM_HW_RST_CLR, 0, GPIO_CFG_INPUT,
-			 GPIO_CFG_PULL_UP, GPIO_CFG_2MA),
-		GPIO_CFG(MSM_HW_RST_CLR, 0, GPIO_CFG_OUTPUT,
-			 GPIO_CFG_PULL_UP, GPIO_CFG_2MA),
-	};
-
-	pr_info("[KEY] %s ++++++\n", __func__);
-	gpio_tlmm_config(hw_clr_gpio_table[1], GPIO_CFG_ENABLE);
-	gpio_set_value(MSM_HW_RST_CLR, 0);
-	msleep(100);
-	gpio_tlmm_config(hw_clr_gpio_table[0], GPIO_CFG_ENABLE);
-	pr_info("[KEY] %s ------\n", __func__);
-}
-
 static struct gpio_event_input_info k2_cl_keypad_input_info = {
 	.info.func             = gpio_event_input_func,
 	.flags                 = GPIOEDF_PRINT_KEYS,
@@ -101,7 +83,6 @@ static struct gpio_event_input_info k2_cl_keypad_input_info = {
 	.keymap                = k2_cl_keypad_input_map,
 	.keymap_size           = ARRAY_SIZE(k2_cl_keypad_input_map),
 	.setup_input_gpio      = k2_cl_setup_input_gpio,
-	.clear_hw_reset        = k2_cl_clear_hw_reset,
 };
 
 static struct gpio_event_info *k2_cl_keypad_info[] = {

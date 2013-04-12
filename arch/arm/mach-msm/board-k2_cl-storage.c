@@ -159,7 +159,7 @@ static struct msm_mmc_pad_pull sdc3_pad_pull_off_cfg[] = {
 	 * there is no current leak during sleep if external pull up
 	 * is connected to DATA lines.
 	 */
-	{TLMM_PULL_SDC3_DATA,GPIO_CFG_PULL_DOWN}
+	{TLMM_PULL_SDC3_DATA, GPIO_CFG_PULL_DOWN}
 };
 
 static struct msm_mmc_pad_pull_data mmc_pad_pull_data[MAX_SDCC_CONTROLLER] = {
@@ -308,7 +308,6 @@ void __init msm8930_init_mmc(void)
 		msm8930_sdc3_data.wpswitch_gpio = 0;
 		msm8930_sdc3_data.wpswitch_polarity = 0;
 	}
-	msm8930_sdc3_data.disable_runtime_pm = true;
 	msm_add_sdcc(3, &msm8930_sdc3_data);
 #endif
 }

@@ -53,7 +53,7 @@
 #define CAM_PIN_GPIO_CAM_VCM_PD		MSM_CAM_VCM_PD
 #define CAM_PIN_GPIO_CAM2_RSTz		MSM_CAM2_RSTz
 #define CAM_PIN_GPIO_CAM2_STANDBY	0
-#define CAM_PIN_GPIO_CAM2_SEL		MSM_CAM_SEL
+#define CAM_PIN_GPIO_CAM2_SEL		22
 #define CAM_PIN_GPIO_CAM_ID			MSM_CAM_ID
 
 
@@ -1850,7 +1850,7 @@ void __init k2_cl_init_cam(void)
 		gpio_free(CAM_PIN_GPIO_CAM_ID);
 	}
 
-	if (0) { /* Always probe ov5693 by default */
+	if (voltage == 1) {
 		pr_info("[CAM] use s5k4e5yx and s5k6a1gx\n");
 		k2_cl_camera_board_info.board_info = k2_cl_camera_i2c_boardinfo_old;
 		k2_cl_camera_board_info.num_i2c_board_info = ARRAY_SIZE(k2_cl_camera_i2c_boardinfo_old);

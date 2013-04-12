@@ -1,4 +1,4 @@
-/* linux/arch/arm/mach-msm/board-k2_plc_cl-wifi.h
+/* linux/arch/arm/mach-msm/board-k2_cl-wifi.h
  *
  * Copyright (C) 2008 HTC Corporation.
  *

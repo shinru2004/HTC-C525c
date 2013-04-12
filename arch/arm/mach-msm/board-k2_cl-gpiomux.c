@@ -38,7 +38,7 @@ static struct gpiomux_setting gsbi3_suspended_cfg = {
 /* HTC_AUD, USB_AUDIO ++ */
 	.drv = GPIOMUX_DRV_8MA,
 	.pull = GPIOMUX_PULL_NONE,
-/* HTC_AUD, USB_AUDIO ++ */
+/* HTC_AUD, USB_AUDIO -- */
 };
 
 static struct gpiomux_setting gsbi3_active_cfg = {
@@ -69,7 +69,6 @@ static struct gpiomux_setting cdc_mclk = {
 	.func = GPIOMUX_FUNC_1,
 	.drv = GPIOMUX_DRV_8MA,
 	.pull = GPIOMUX_PULL_NONE,
-	.dir = GPIOMUX_OUT_LOW,
 };
 
 static struct gpiomux_setting audio_auxpcm[] = {
@@ -132,12 +131,10 @@ static struct gpiomux_setting gpio_eth_config = {
 #endif
 */
 
-
-static struct gpiomux_setting slimbus_out = {
-        .func = GPIOMUX_FUNC_1,
-        .drv = GPIOMUX_DRV_8MA,
-        .pull = GPIOMUX_PULL_NONE,
-	.dir = GPIOMUX_OUT_HIGH,
+static struct gpiomux_setting slimbus = {
+	.func = GPIOMUX_FUNC_1,
+	.drv = GPIOMUX_DRV_8MA,
+	.pull = GPIOMUX_PULL_KEEPER,
 };
 
 static struct gpiomux_setting wcnss_5wire_suspend_cfg = {
@@ -332,14 +329,6 @@ static struct msm_gpiomux_config msm8960_gsbi_configs[] __initdata = {
 		.dir = GPIOMUX_OUT_LOW,
 	};
 
-        static struct gpiomux_setting  mi2s_input_sus_cfg = {
-                .func = GPIOMUX_FUNC_GPIO,
-                .drv = GPIOMUX_DRV_2MA,
-                .pull = GPIOMUX_PULL_DOWN,
-                .dir = GPIOMUX_IN,
-        };
-
-
 static struct msm_gpiomux_config msm8960_mi2s_configs[] __initdata = {
 	{
 		.gpio	= 47,		/* mi2s ws */
@@ -358,7 +347,7 @@ static struct msm_gpiomux_config msm8960_mi2s_configs[] __initdata = {
 	{
 		.gpio	= 49,		/* mi2s din */
 		.settings = {
-			[GPIOMUX_SUSPENDED] = &mi2s_input_sus_cfg,
+			[GPIOMUX_SUSPENDED] = &mi2s_sus_cfg,
 			[GPIOMUX_ACTIVE] = &mi2s_act_cfg,
 		},
 	},
@@ -370,36 +359,12 @@ static struct msm_gpiomux_config msm8960_mi2s_configs[] __initdata = {
 		},
 	},
 };
-
-
-        static struct gpiomux_setting  wcd_reset_sus_cfg = {
-                .func = GPIOMUX_FUNC_GPIO,
-                .drv = GPIOMUX_DRV_2MA,
-                .pull = GPIOMUX_PULL_NONE,
-                .dir = GPIOMUX_OUT_HIGH,
-        };
-
-
-
-static struct msm_gpiomux_config msm8960_wcd_reset_configs[] __initdata = {
-
-	{
-		.gpio = 42,	/* AUD_WCD_RESET */
-		.settings = {
-			[GPIOMUX_SUSPENDED] = &wcd_reset_sus_cfg,
-
-		},
-	},
-};
-
-
 // HTC_AUD --
 
 
 
 //HTC_AUD ++
 /* used for XA version */
-#if 0 // GPIO: 55 (Reserve), GPIO: 56 (Reserve), GPIO 57 (NC)
 static struct gpiomux_setting  pri_i2s[] = {
 	/* Suspended state */
 	{
@@ -458,17 +423,15 @@ static struct msm_gpiomux_config msm8960_i2s_tx_configs[] __initdata = {
 	},
 };
 
-#endif
 
 /* used for XA version */
-#if 0 // GPIO: 55 (Reserve), GPIO: 56 (Reserve), GPIO 57 (NC)
 static struct gpiomux_setting  pri_i2s_XB[] = {
 	/* Suspended state */
 	{
 		.func = GPIOMUX_FUNC_GPIO,
 		.drv = GPIOMUX_DRV_2MA,
 		.pull = GPIOMUX_PULL_NONE,
-		.dir =  GPIOMUX_OUT_LOW,
+		.dir =  GPIOMUX_IN,
 	},
 	/* Active state */
 	{
@@ -484,7 +447,7 @@ static struct gpiomux_setting  pri_i2s_XB_input[] = {
 	{
 		.func = GPIOMUX_FUNC_GPIO,
 		.drv = GPIOMUX_DRV_2MA,
-		.pull = GPIOMUX_PULL_DOWN,
+		.pull = GPIOMUX_PULL_NONE,
 		.dir =  GPIOMUX_IN,
 	},
 	/* Active state */
@@ -519,7 +482,6 @@ static struct msm_gpiomux_config msm8960_i2s_XB_tx_configs[] __initdata = {
 		},
 	},
 };
-#endif
 
 
 //HTC_AUD --
@@ -527,13 +489,13 @@ static struct msm_gpiomux_config msm8960_slimbus_config[] __initdata = {
 	{
 		.gpio	= 60,		/* slimbus data */
 		.settings = {
-			[GPIOMUX_SUSPENDED] = &slimbus_out,
+			[GPIOMUX_SUSPENDED] = &slimbus,
 		},
 	},
 	{
 		.gpio	= 61,		/* slimbus clk */
 		.settings = {
-			[GPIOMUX_SUSPENDED] = &slimbus_out,
+			[GPIOMUX_SUSPENDED] = &slimbus,
 		},
 	},
 };
@@ -708,29 +670,20 @@ int __init msm8930_init_gpiomux(void)
 
 	if (system_rev == 0) {
 	/* XA board */
-	//HTC_AUD ++
-#if 0 // GPIO: 55 (Reserve), GPIO: 56 (Reserve), GPIO 57 (NC)
+//HTC_AUD ++
 		msm_gpiomux_install(msm8960_i2s_tx_configs,
 			ARRAY_SIZE(msm8960_i2s_tx_configs));
-#endif
-	//HTC_AUD --
+//HTC_AUD --
 	} else {
 	/* XB board */
-		//HTC_AUD ++
-#if 0 // GPIO: 55 (Reserve), GPIO: 56 (Reserve), GPIO 57 (NC)
-			msm_gpiomux_install(msm8960_i2s_XB_tx_configs,
+//HTC_AUD ++
+		msm_gpiomux_install(msm8960_i2s_XB_tx_configs,
 			ARRAY_SIZE(msm8960_i2s_XB_tx_configs));
-#endif
-
 
 		msm_gpiomux_install(msm8960_mi2s_configs,
 			ARRAY_SIZE(msm8960_mi2s_configs));
-	//HTC_AUD --
+//HTC_AUD --
 	}
-	/* HTC_AUD_START */
-	msm_gpiomux_install(msm8960_wcd_reset_configs, ARRAY_SIZE(msm8960_wcd_reset_configs));
-	/* HTC_AUD_END */
-
 	msm_gpiomux_install(msm8960_audio_auxpcm_configs,
 			ARRAY_SIZE(msm8960_audio_auxpcm_configs));
 

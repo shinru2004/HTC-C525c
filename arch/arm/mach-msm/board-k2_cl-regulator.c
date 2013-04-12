@@ -70,8 +70,6 @@ VREG_CONSUMERS(L9) = {
 	REGULATOR_SUPPLY("cam_vaf",		"4-0048"),
 	REGULATOR_SUPPLY("cam_vana",            "4-0020"),
 	REGULATOR_SUPPLY("cam_vaf",             "4-0020"),
-	REGULATOR_SUPPLY("8038_l9_g_sensor",	NULL),
-	REGULATOR_SUPPLY("8038_l9_compass",	NULL),
 };
 VREG_CONSUMERS(L10) = {
 	REGULATOR_SUPPLY("8038_l10",		NULL),
