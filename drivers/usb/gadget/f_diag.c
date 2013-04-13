@@ -973,11 +973,15 @@ static void diag_cleanup(void)
 		}
 		spin_unlock_irqrestore(&ch_lock, flags);
 	}
+#if DIAG_XPST
+	switch_dev_unregister(&sw_htc_usb_diag);
+#endif
 }
 
 static int diag_setup(void)
 {
 #if DIAG_XPST
+	int ret;
 	struct diag_context *dev = get_modem_ctxt();
 	dev->ready = 1;
 
@@ -992,6 +996,11 @@ static int diag_setup(void)
 	mutex_init(&dev->diag2arm9_lock);
 	mutex_init(&dev->diag2arm9_read_lock);
 	mutex_init(&dev->diag2arm9_write_lock);
+
+	sw_htc_usb_diag.name = "usb_diag";
+	ret = switch_dev_register(&sw_htc_usb_diag);
+	if (ret < 0)
+		pr_err("switch_dev_register fail:usb_diag\n");
 #endif
 	fdiag_debugfs_init();
 

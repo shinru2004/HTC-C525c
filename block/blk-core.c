@@ -32,6 +32,11 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/block.h>
 
+#ifdef CONFIG_MMC_MUST_PREVENT_WP_VIOLATION
+#include <linux/mmc/card.h>
+#include <mach/board.h>
+#endif	/* CONFIG_MMC_MUST_PREVENT_WP_VIOLATION */
+
 #include "blk.h"
 
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_remap);
@@ -1438,8 +1443,22 @@ static inline void __generic_make_request(struct bio *bio)
 	int ret, nr_sectors = bio_sectors(bio);
 	dev_t old_dev;
 	int err = -EIO;
+#ifdef CONFIG_MMC_MUST_PREVENT_WP_VIOLATION
+	char b[BDEVNAME_SIZE], wp_prevention_partno[64];
+#endif
 
 	might_sleep();
+
+#ifdef CONFIG_MMC_MUST_PREVENT_WP_VIOLATION
+		mmc_blk_get_wp_prevention_partno(&wp_prevention_partno[0]);
+		if (!strcmp(bdevname(bio->bi_bdev, b), wp_prevention_partno) && !board_mfg_mode() &&
+			get_mmc0_write_protection_type() && (bio->bi_rw & WRITE)) {
+			pr_info("%s: Attempt to write protected eMMC, %s(%d) block %Lu \n", __func__,
+				current->comm, task_pid_nr(current), (unsigned long long)bio->bi_sector);
+			err = 0;
+			goto end_io;
+		}
+#endif
 
 	if (bio_check_eod(bio, nr_sectors))
 		goto end_io;

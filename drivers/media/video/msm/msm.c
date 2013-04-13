@@ -3229,7 +3229,7 @@ int msm_setup_v4l2_event_queue(struct v4l2_fh *eventHandle,
 	}
 
 	/* queue of max size 30 */
-	rc = v4l2_event_alloc(eventHandle, 30);
+	rc = v4l2_event_alloc(eventHandle, 200);
 	if (rc < 0)
 		return rc;
 

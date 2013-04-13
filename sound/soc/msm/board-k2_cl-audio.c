@@ -50,11 +50,16 @@
 #define SITAR_MBHC_DEF_BUTTONS 3
 #define SITAR_MBHC_DEF_RLOADS 5
 //HTC_AUD ++
+
 #define GPIO_MI2S_WS     47
 #define GPIO_MI2S_SCLK   48
 #define GPIO_MI2S_DIN  49
 #define GPIO_MI2S_DOUT  52
 
+
+#define GPIO_I2S_TX_PCLK  55
+#define GPIO_I2S_TX_WS    56
+#define GPIO_I2S_TX_DIN   57
 #define GPIO_SPK_AMP      75
 
 #define GPIO_AUX_PCM_DOUT 63
@@ -87,8 +92,10 @@ static int msm8930_enable_codec_ext_clk(
 		bool dapm);
 
 //HTC_AUD ++
+static struct clk *pri_i2s_rx_osr_clk;
+static struct clk *pri_i2s_rx_bit_clk;
 
-static void speaker_init(void)
+static void gpio_init(void)
 {
 	gpio_tlmm_config(GPIO_CFG(GPIO_SPK_AMP, 0, GPIO_CFG_OUTPUT,
 		 GPIO_CFG_NO_PULL, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
@@ -130,6 +137,7 @@ static int msm8930_mi2s_free_gpios(void)
 	return 0;
 }
 
+
 static int msm8930_mi2s_hw_params(struct snd_pcm_substream *substream,
 			struct snd_pcm_hw_params *params)
 {
@@ -168,6 +176,7 @@ static int configure_mi2s_gpio(void)
 	int	rtn;
 	int	i;
 	int	j;
+	pr_info("config mi2s gpio");
 	for (i = 0; i < ARRAY_SIZE(mi2s_gpio); i++) {
 		rtn = gpio_request(mi2s_gpio[i].gpio_no,
 						   mi2s_gpio[i].gpio_name);
@@ -236,6 +245,125 @@ static struct snd_soc_ops msm8930_mi2s_be_ops = {
 	.startup = msm8930_mi2s_startup,
 	.shutdown = msm8930_mi2s_shutdown,
 	.hw_params = msm8930_mi2s_hw_params,
+};
+
+
+static int msm8930_i2s_hw_params(struct snd_pcm_substream *substream,
+			struct snd_pcm_hw_params *params)
+{
+	int rate = params_rate(params);
+	int bit_clk_set = 0;
+
+	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+		bit_clk_set = 12288000/(rate * 2 * 16);
+		pr_info("%s, bit clock is %d\n", __func__, bit_clk_set);
+		clk_set_rate(pri_i2s_rx_bit_clk, bit_clk_set);
+	}
+	return 1;
+}
+
+static int msm8930_i2s_tx_free_gpios(void)
+{
+	gpio_free(GPIO_I2S_TX_DIN);
+	gpio_free(GPIO_I2S_TX_WS);
+	gpio_free(GPIO_I2S_TX_PCLK);
+	return 0;
+}
+
+static void msm8930_i2s_shutdown(struct snd_pcm_substream *substream)
+{
+	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+		if (pri_i2s_rx_bit_clk) {
+			clk_disable_unprepare(pri_i2s_rx_bit_clk);
+			clk_put(pri_i2s_rx_bit_clk);
+			pri_i2s_rx_bit_clk = NULL;
+		}
+		if (pri_i2s_rx_osr_clk) {
+			clk_disable_unprepare(pri_i2s_rx_osr_clk);
+			clk_put(pri_i2s_rx_osr_clk);
+			pri_i2s_rx_osr_clk = NULL;
+		}
+		msm8930_i2s_tx_free_gpios();
+	}
+}
+
+static int configure_i2s_tx_gpio(void)
+{
+	int rtn;
+
+	rtn	= gpio_request(GPIO_I2S_TX_PCLK, "I2S_TX_PCLK");
+	if (rtn) {
+		pr_err("%s: Failed to request gpio %d\n", __func__,
+			   GPIO_I2S_TX_PCLK);
+		goto err;
+	}
+	rtn	= gpio_request(GPIO_I2S_TX_WS, "I2S_TX_WS");
+	if (rtn) {
+		pr_err("%s: Failed to request gpio %d\n", __func__,
+			   GPIO_I2S_TX_WS);
+		goto err;
+	}
+	rtn	= gpio_request(GPIO_I2S_TX_DIN, "I2S_TX_DIN");
+	if (rtn) {
+		pr_err("%s: Failed to request gpio %d\n", __func__,
+			   GPIO_I2S_TX_DIN);
+		goto err;
+	}
+err:
+	return rtn;
+}
+
+static int msm8930_i2s_startup(struct snd_pcm_substream *substream)
+{
+	int ret = 0;
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+	struct snd_soc_dai *codec_dai = rtd->codec_dai;
+
+	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+		configure_i2s_tx_gpio();
+
+		pri_i2s_rx_osr_clk = clk_get(cpu_dai->dev, "osr_clk");
+		if (IS_ERR(pri_i2s_rx_osr_clk)) {
+			pr_err("Failed to get pri_i2s_rx_osr_clk\n");
+			return PTR_ERR(pri_i2s_rx_osr_clk);
+		}
+		clk_set_rate(pri_i2s_rx_osr_clk, 12288000);
+		clk_prepare_enable(pri_i2s_rx_osr_clk);
+
+		pri_i2s_rx_bit_clk = clk_get(cpu_dai->dev, "bit_clk");
+		if (IS_ERR(pri_i2s_rx_bit_clk)) {
+			pr_err("Failed to get pri_i2s_rx_bit_clk\n");
+			clk_disable_unprepare(pri_i2s_rx_osr_clk);
+			clk_put(pri_i2s_rx_osr_clk);
+			return PTR_ERR(pri_i2s_rx_bit_clk);
+		}
+		clk_set_rate(pri_i2s_rx_bit_clk, 8);
+		ret = clk_prepare_enable(pri_i2s_rx_bit_clk);
+		if (ret != 0) {
+			pr_err("Unable to enable pri_i2s_rx_bit_clk\n");
+			clk_put(pri_i2s_rx_bit_clk);
+			clk_disable_unprepare(pri_i2s_rx_osr_clk);
+			clk_put(pri_i2s_rx_osr_clk);
+			return ret;
+		}
+
+		/* configurea as master mode */
+		ret = snd_soc_dai_set_fmt(cpu_dai, SND_SOC_DAIFMT_CBS_CFS);
+		if (ret < 0) {
+			pr_info("%s: set format for cpu dai failed\n", __func__);
+			ret = snd_soc_dai_set_fmt(codec_dai, SND_SOC_DAIFMT_CBS_CFS);
+		}
+		if (ret < 0)
+			pr_err("set format for codec dai failed\n");
+	}
+	return ret;
+}
+
+static struct snd_soc_ops msm8930_i2s_be_ops = {
+	.startup = msm8930_i2s_startup,
+	.shutdown = msm8930_i2s_shutdown,
+	.hw_params = msm8930_i2s_hw_params,
 };
 //HTC_AUD --
 
@@ -912,8 +1040,9 @@ static struct snd_soc_ops msm_auxpcm_be_ops = {
 	.shutdown = msm_auxpcm_shutdown,
 };
 
-/* Digital audio interface glue - connects codec <---> CPU */
-static struct snd_soc_dai_link msm8930_dai[] = {
+
+ /*Digital audio interface glue - connects codec <---> CPU */
+static struct snd_soc_dai_link msm8930_XB_dai[] = {
 	/* FrontEnd DAI Links */
 	{
 		.name = "MSM8930 Media1",
@@ -1246,53 +1375,379 @@ static struct snd_soc_dai_link msm8930_dai[] = {
 	},
 };
 
+/* Digital audio interface glue - connects codec <---> CPU */
+static struct snd_soc_dai_link msm8930_dai[] = {
+	/* FrontEnd DAI Links */
+	{
+		.name = "MSM8930 Media1",
+		.stream_name = "MultiMedia1",
+		.cpu_dai_name	= "MultiMedia1",
+		.platform_name  = "msm-pcm-dsp",
+		.dynamic = 1,
+		.dsp_link = &fe_media,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA1
+	},
+	{
+		.name = "MSM8930 Media2",
+		.stream_name = "MultiMedia2",
+		.cpu_dai_name	= "MultiMedia2",
+		.platform_name  = "msm-pcm-dsp",
+		.dynamic = 1,
+		.dsp_link = &fe_media,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA2,
+	},
+	{
+		.name = "Circuit-Switch Voice",
+		.stream_name = "CS-Voice",
+		.cpu_dai_name   = "CS-VOICE",
+		.platform_name  = "msm-pcm-voice",
+		.dynamic = 1,
+		.dsp_link = &fe_media,
+		.be_id = MSM_FRONTEND_DAI_CS_VOICE,
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = "MSM VoIP",
+		.stream_name = "VoIP",
+		.cpu_dai_name	= "VoIP",
+		.platform_name  = "msm-voip-dsp",
+		.dynamic = 1,
+		.dsp_link = &fe_media,
+		.be_id = MSM_FRONTEND_DAI_VOIP,
+	},
+	{
+		.name = "MSM8930 LPA",
+		.stream_name = "LPA",
+		.cpu_dai_name	= "MultiMedia3",
+		.platform_name  = "msm-pcm-lpa",
+		.dynamic = 1,
+		.dsp_link = &lpa_fe_media,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA3,
+	},
+	/* Hostless PMC purpose */
+	{
+		.name = "SLIMBUS_0 Hostless",
+		.stream_name = "SLIMBUS_0 Hostless",
+		.cpu_dai_name	= "SLIMBUS0_HOSTLESS",
+		.platform_name  = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dsp_link = &slimbus0_hl_media,
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		/* .be_id = do not care */
+	},
+	{
+//HTC_AUD ++ : replace QCT RIVA by BoardCom4334
+#if 0
+		.name = "INT_FM Hostless",
+		.stream_name = "INT_FM Hostless",
+		.cpu_dai_name	= "INT_FM_HOSTLESS",
+#endif
+		.name = "PRI_I2S_TX Hostless",
+		.stream_name = "PRI_I2S Hostless",
+		.cpu_dai_name = "PRI_I2S_HOSTLESS",
+//HTC_AUD --
+		.platform_name  = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dsp_link = &int_fm_hl_media,
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		/* .be_id = do not care */
+	},
+	{
+		.name = "MSM AFE-PCM RX",
+		.stream_name = "AFE-PROXY RX",
+		.cpu_dai_name = "msm-dai-q6.241",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.platform_name  = "msm-pcm-afe",
+		.ignore_suspend = 1,
+	},
+	{
+		.name = "MSM AFE-PCM TX",
+		.stream_name = "AFE-PROXY TX",
+		.cpu_dai_name = "msm-dai-q6.240",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.platform_name  = "msm-pcm-afe",
+		.ignore_suspend = 1,
+	},
+	{
+		.name = "MSM8930 Compr",
+		.stream_name = "COMPR",
+		.cpu_dai_name	= "MultiMedia4",
+		.platform_name  = "msm-compr-dsp",
+		.dynamic = 1,
+		.dsp_link = &lpa_fe_media,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA4,
+	},
+	 {
+		.name = "AUXPCM Hostless",
+		.stream_name = "AUXPCM Hostless",
+		.cpu_dai_name   = "AUXPCM_HOSTLESS",
+		.platform_name  = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dsp_link = &bidir_hl_media,
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+	},
+	/* HDMI Hostless */
+	{
+		.name = "HDMI_RX_HOSTLESS",
+		.stream_name = "HDMI_RX_HOSTLESS",
+		.cpu_dai_name = "HDMI_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dsp_link = &hdmi_rx_hl,
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.no_codec = 1,
+		.ignore_suspend = 1,
+	},
+	/* Backend DAI Links */
+	{
+		.name = LPASS_BE_SLIMBUS_0_RX,
+		.stream_name = "Slimbus Playback",
+		.cpu_dai_name = "msm-dai-q6.16384",
+		.platform_name = "msm-pcm-routing",
+		.codec_name     = "sitar_codec",
+		.codec_dai_name	= "sitar_rx1",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_SLIMBUS_0_RX,
+		.init = &msm8930_audrx_init,
+		.be_hw_params_fixup = msm8930_slim_0_rx_be_hw_params_fixup,
+		.ops = &msm8930_be_ops,
+	},
+	{
+		.name = LPASS_BE_SLIMBUS_0_TX,
+		.stream_name = "Slimbus Capture",
+		.cpu_dai_name = "msm-dai-q6.16385",
+		.platform_name = "msm-pcm-routing",
+		.codec_name     = "sitar_codec",
+		.codec_dai_name	= "sitar_tx1",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_SLIMBUS_0_TX,
+		.be_hw_params_fixup = msm8930_slim_0_tx_be_hw_params_fixup,
+		.ops = &msm8930_be_ops,
+	},
+	/* Backend BT/FM DAI Links */
+	{
+		.name = LPASS_BE_INT_BT_SCO_RX,
+		.stream_name = "Internal BT-SCO Playback",
+		.cpu_dai_name = "msm-dai-q6.12288",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name	= "msm-stub-rx",
+		.init = &msm8930_btsco_init,
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_INT_BT_SCO_RX,
+		.be_hw_params_fixup = msm8930_btsco_be_hw_params_fixup,
+	},
+	{
+		.name = LPASS_BE_INT_BT_SCO_TX,
+		.stream_name = "Internal BT-SCO Capture",
+		.cpu_dai_name = "msm-dai-q6.12289",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name	= "msm-stub-tx",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_INT_BT_SCO_TX,
+		.be_hw_params_fixup = msm8930_btsco_be_hw_params_fixup,
+	},
+	{
+		.name = LPASS_BE_INT_FM_RX,
+		.stream_name = "Internal FM Playback",
+		.cpu_dai_name = "msm-dai-q6.12292",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_INT_FM_RX,
+		.be_hw_params_fixup = msm8930_be_hw_params_fixup,
+	},
+	{
+		.name = LPASS_BE_INT_FM_TX,
+		.stream_name = "Internal FM Capture",
+		.cpu_dai_name = "msm-dai-q6.12293",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_INT_FM_TX,
+		.be_hw_params_fixup = msm8930_be_hw_params_fixup,
+	},
+	/* HDMI BACK END DAI Link */
+	{
+		.name = LPASS_BE_HDMI,
+		.stream_name = "HDMI Playback",
+		.cpu_dai_name = "msm-dai-q6-hdmi.8",
+		.platform_name = "msm-pcm-routing",
+		.codec_name     = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.no_codec = 1,
+		.be_id = MSM_BACKEND_DAI_HDMI_RX,
+		.be_hw_params_fixup = msm8930_hdmi_be_hw_params_fixup,
+	},
+//HTC_AUD ++
+	{
+		.name = LPASS_BE_PRI_I2S_TX,
+		.stream_name = "Primary I2S Capture",
+		.cpu_dai_name = "msm-dai-q6.1",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.no_codec = 1,
+		.be_id = MSM_BACKEND_DAI_PRI_I2S_TX,
+		.be_hw_params_fixup = msm8930_be_hw_params_fixup,
+		.ops = &msm8930_i2s_be_ops,
+	},
+//HTC_AUD --
+	/* Backend AFE DAI Links */
+	{
+		.name = LPASS_BE_AFE_PCM_RX,
+		.stream_name = "AFE Playback",
+		.cpu_dai_name = "msm-dai-q6.224",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_codec = 1,
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_AFE_PCM_RX,
+		.be_hw_params_fixup = msm_proxy_be_hw_params_fixup,
+	},
+	{
+		.name = LPASS_BE_AFE_PCM_TX,
+		.stream_name = "AFE Capture",
+		.cpu_dai_name = "msm-dai-q6.225",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_codec = 1,
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_AFE_PCM_TX,
+		.be_hw_params_fixup = msm_proxy_be_hw_params_fixup,
+	},
+	/* AUX PCM Backend DAI Links */
+	{
+		.name = LPASS_BE_AUXPCM_RX,
+		.stream_name = "AUX PCM Playback",
+		.cpu_dai_name = "msm-dai-q6.2",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_AUXPCM_RX,
+		.be_hw_params_fixup = msm_auxpcm_be_params_fixup,
+		.ops = &msm_auxpcm_be_ops,
+	},
+	{
+		.name = LPASS_BE_AUXPCM_TX,
+		.stream_name = "AUX PCM Capture",
+		.cpu_dai_name = "msm-dai-q6.3",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_AUXPCM_TX,
+		.be_hw_params_fixup = msm_auxpcm_be_params_fixup,
+	},
+	/* Incall Music BACK END DAI Link */
+	{
+		.name = LPASS_BE_VOICE_PLAYBACK_TX,
+		.stream_name = "Voice Farend Playback",
+		.cpu_dai_name = "msm-dai-q6.32773",
+		.platform_name = "msm-pcm-routing",
+		.codec_name     = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.no_codec = 1,
+		.be_id = MSM_BACKEND_DAI_VOICE_PLAYBACK_TX,
+		.be_hw_params_fixup = msm8930_be_hw_params_fixup,
+	},
+	/* Incall Record Uplink BACK END DAI Link */
+	{
+		.name = LPASS_BE_INCALL_RECORD_TX,
+		.stream_name = "Voice Uplink Capture",
+		.cpu_dai_name = "msm-dai-q6.32772",
+		.platform_name = "msm-pcm-routing",
+		.codec_name     = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.no_codec = 1,
+		.be_id = MSM_BACKEND_DAI_INCALL_RECORD_TX,
+		.be_hw_params_fixup = msm8930_be_hw_params_fixup,
+	},
+	/* Incall Record Downlink BACK END DAI Link */
+	{
+		.name = LPASS_BE_INCALL_RECORD_RX,
+		.stream_name = "Voice Downlink Capture",
+		.cpu_dai_name = "msm-dai-q6.32771",
+		.platform_name = "msm-pcm-routing",
+		.codec_name     = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.no_codec = 1,
+		.be_id = MSM_BACKEND_DAI_INCALL_RECORD_RX,
+		.be_hw_params_fixup = msm8930_be_hw_params_fixup,
+	},
+};
+
 struct snd_soc_card snd_soc_card_msm8930 = {
 	.name		= "msm8930-sitar-snd-card",
 	.dai_link	= msm8930_dai,
 	.num_links	= ARRAY_SIZE(msm8930_dai),
 };
 
+struct snd_soc_card snd_soc_card_msm8930_XB = {
+	.name		= "msm8930-sitar-snd-card",
+	.dai_link	= msm8930_XB_dai,
+	.num_links	= ARRAY_SIZE(msm8930_XB_dai),
+};
+
 static struct platform_device *msm8930_snd_device;
 
-void k2plccl_set_q6_effect_mode(int mode)
+void k2cl_set_q6_effect_mode(int mode)
 {
 	pr_info("%s: mode %d\n", __func__, mode);
 	atomic_set(&q6_effect_mode, mode);
 }
 
-int k2plccl_get_q6_effect_mode(void)
+int k2cl_get_q6_effect_mode(void)
 {
 	int mode = atomic_read(&q6_effect_mode);
 	pr_info("%s: mode %d\n", __func__, mode);
 	return mode;
 }
 
-int k2plccl_get_hw_revision(void)
+int k2cl_get_hw_revision(void)
 {
 	int audio_hw_rev;
 
-	audio_hw_rev = 0;
+	audio_hw_rev = system_rev;
 
 	pr_info("%s: audio hw rev is %d\n", __func__, audio_hw_rev);
 	return audio_hw_rev;
+
 }
-int k2plccl_get_component_info(void)
+int k2cl_get_component_info(void)
 {
 	return 0;
 }
 
 static struct acoustic_ops acoustic = {
-	.set_q6_effect = k2plccl_set_q6_effect_mode,
-	.get_htc_revision = k2plccl_get_hw_revision,
-	.get_hw_component = k2plccl_get_component_info,
+	.set_q6_effect = k2cl_set_q6_effect_mode,
+	.get_htc_revision = k2cl_get_hw_revision,
+	.get_hw_component = k2cl_get_component_info,
 };
 
 static struct q6asm_ops qops = {
-	.get_q6_effect = k2plccl_get_q6_effect_mode,
+	.get_q6_effect = k2cl_get_q6_effect_mode,
 };
 
 static struct msm_pcm_routing_ops rops = {
-	.get_q6_effect = k2plccl_get_q6_effect_mode,
+	.get_q6_effect = k2cl_get_q6_effect_mode,
 };
 
 static int __init msm8930_audio_init(void)
@@ -1310,9 +1765,15 @@ static int __init msm8930_audio_init(void)
 		return -ENOMEM;
 	}
 //HTC_AUD ++
-	atomic_set(&mi2s_rsc_ref, 0);
-//HTC_AUD --
-	platform_set_drvdata(msm8930_snd_device, &snd_soc_card_msm8930);
+	if (system_rev == 0) {
+		pr_info("register XA sound card");
+		platform_set_drvdata(msm8930_snd_device, &snd_soc_card_msm8930);
+	} else {
+		pr_info("register XB sound card");
+		atomic_set(&mi2s_rsc_ref, 0);
+		platform_set_drvdata(msm8930_snd_device, &snd_soc_card_msm8930_XB);
+	}
+// HTC_AUD --
 	ret = platform_device_add(msm8930_snd_device);
 	if (ret) {
 		platform_device_put(msm8930_snd_device);
@@ -1321,13 +1782,13 @@ static int __init msm8930_audio_init(void)
 
 	msm8930_headset_gpios_configured = 0;
 
-	
-	speaker_init();
+// HTC_AUD ++
+	gpio_init();
 	htc_register_q6asm_ops(&qops);
 	htc_register_pcm_routing_ops(&rops);
 	acoustic_register_ops(&acoustic);
 	mutex_init(&aux_pcm_mutex);
-
+// HTC_AUD --
 	return ret;
 
 }

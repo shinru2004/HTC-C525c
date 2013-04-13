@@ -3580,7 +3580,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 	uint32 dongle_align = DHD_SDALIGN;
 	uint32 glom = 5;
 	uint32 txlazydelay = 0;
-	uint bcn_timeout = 4;
+	uint bcn_timeout = 8;
 	uint retry_max = 10;
 #if defined(ARP_OFFLOAD_SUPPORT)
 	int arpoe = 0; /* Do not enable ARP offload feature since it has bug */

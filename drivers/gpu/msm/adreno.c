@@ -1575,7 +1575,9 @@ static int adreno_waittimestamp(struct kgsl_device *device,
 	unsigned int context_id = _get_context_id(context);
 	unsigned int time_elapsed = 0;
 	unsigned int prev_reg_val[hang_detect_regs_count];
-	unsigned int wait;
+	//unsigned int wait;
+	unsigned int msecs_first;
+	unsigned int msecs_part = KGSL_TIMEOUT_PART;
 
 	memset(prev_reg_val, 0, sizeof(prev_reg_val));
 
@@ -1599,11 +1601,8 @@ static int adreno_waittimestamp(struct kgsl_device *device,
 	 * the requested timeout is less than 100 msecs, then wait 20msecs which
 	 * is the minimum amount of time we can safely wait at 100HZ
 	 */
-
-	if (msecs == 0 || msecs >= 100)
-		wait = 100;
-	else
-		wait = 20;
+	msecs_first = (msecs <= 100) ? ((msecs + 4) / 5) : 100;
+	msecs = 80000;
 
 	do {
 		/*
@@ -1643,7 +1642,8 @@ static int adreno_waittimestamp(struct kgsl_device *device,
 				device->wait_queue,
 				kgsl_check_interrupt_timestamp(device,
 					context, timestamp),
-				msecs_to_jiffies(wait), io);
+				msecs_to_jiffies(retries ?
+					msecs_part : msecs_first), io);
 
 		mutex_lock(&device->mutex);
 
@@ -1657,12 +1657,11 @@ static int adreno_waittimestamp(struct kgsl_device *device,
 		}
 		/*this wait timed out*/
 
-		time_elapsed += wait;
-		wait = KGSL_TIMEOUT_PART;
-
+		time_elapsed = time_elapsed +
+				(retries ? msecs_part : msecs_first);
 		retries++;
 
-	} while (!msecs || time_elapsed < msecs);
+	} while (time_elapsed < msecs);
 
 hang_dump:
 	status = -ETIMEDOUT;
