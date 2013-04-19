@@ -27,6 +27,34 @@
 #include "hsic_sysmon.h"
 #include "sysmon.h"
 
+#if defined(pr_warn)
+#undef pr_warn
+#endif
+#define pr_warn(x...) do {				\
+			printk(KERN_WARN "[SYSMON] "x);		\
+	} while (0)
+
+#if defined(pr_debug)
+#undef pr_debug
+#endif
+#define pr_debug(x...) do {				\
+			printk(KERN_DEBUG "[SYSMON] "x);		\
+	} while (0)
+
+#if defined(pr_info)
+#undef pr_info
+#endif
+#define pr_info(x...) do {				\
+			printk(KERN_INFO "[SYSMON] "x);		\
+	} while (0)
+
+#if defined(pr_err)
+#undef pr_err
+#endif
+#define pr_err(x...) do {				\
+			printk(KERN_ERR "[SYSMON] "x);		\
+	} while (0)
+
 #define TX_BUF_SIZE	50
 #define RX_BUF_SIZE	500
 #define TIMEOUT_MS	5000
@@ -43,6 +71,7 @@ struct sysmon_subsys {
 	struct completion	resp_ready;
 	char			rx_buf[RX_BUF_SIZE];
 	enum transports		transport;
+	bool mutex_initialized;
 };
 
 static struct sysmon_subsys subsys[SYSMON_NUM_SS] = {
@@ -118,19 +147,6 @@ static int sysmon_send_msg(struct sysmon_subsys *ss, const char *tx_buf,
 	return ret;
 }
 
-/**
- * sysmon_send_event() - Notify a subsystem of another's state change
- * @dest_ss:	ID of subsystem the notification should be sent to
- * @event_ss:	String name of the subsystem that generated the notification
- * @notif:	ID of the notification type (ex. SUBSYS_BEFORE_SHUTDOWN)
- *
- * Returns 0 for success, -EINVAL for invalid destination or notification IDs,
- * -ENODEV if the transport channel is not open, -ETIMEDOUT if the destination
- * subsystem does not respond, and -ENOSYS if the destination subsystem
- * responds, but with something other than an acknowledgement.
- *
- * If CONFIG_MSM_SYSMON_COMM is not defined, always return success (0).
- */
 int sysmon_send_event(enum subsys_id dest_ss, const char *event_ss,
 		      enum subsys_notif_type notif)
 {
@@ -158,19 +174,29 @@ out:
 	return ret;
 }
 
-/**
- * sysmon_get_reason() - Retrieve failure reason from a subsystem.
- * @dest_ss:	ID of subsystem to query
- * @buf:	Caller-allocated buffer for the returned NUL-terminated reason
- * @len:	Length of @buf
- *
- * Returns 0 for success, -EINVAL for an invalid destination, -ENODEV if
- * the SMD transport channel is not open, -ETIMEDOUT if the destination
- * subsystem does not respond, and -ENOSYS if the destination subsystem
- * responds with something unexpected.
- *
- * If CONFIG_MSM_SYSMON_COMM is not defined, always return success (0).
- */
+int sysmon_send_shutdown(enum subsys_id dest_ss)
+{
+	struct sysmon_subsys *ss = &subsys[dest_ss];
+	const char tx_buf[] = "system:shutdown";
+	const char expect[] = "system:ack";
+	size_t prefix_len = ARRAY_SIZE(expect) - 1;
+	int ret;
+
+	if (dest_ss < 0 || dest_ss >= SYSMON_NUM_SS)
+		return -EINVAL;
+
+	mutex_lock(&ss->lock);
+	ret = sysmon_send_msg(ss, tx_buf, ARRAY_SIZE(tx_buf));
+	if (ret)
+		goto out;
+
+	if (strncmp(ss->rx_buf, expect, prefix_len))
+		ret = -ENOSYS;
+out:
+	mutex_unlock(&ss->lock);
+	return ret;
+}
+
 int sysmon_get_reason(enum subsys_id dest_ss, char *buf, size_t len)
 {
 	struct sysmon_subsys *ss = &subsys[dest_ss];
@@ -181,6 +207,9 @@ int sysmon_get_reason(enum subsys_id dest_ss, char *buf, size_t len)
 
 	if (dest_ss < 0 || dest_ss >= SYSMON_NUM_SS ||
 	    buf == NULL || len == 0)
+		return -EINVAL;
+
+	if (!ss->mutex_initialized)
 		return -EINVAL;
 
 	mutex_lock(&ss->lock);
@@ -228,8 +257,11 @@ static int sysmon_probe(struct platform_device *pdev)
 	if (pdev->id < 0 || pdev->id >= SYSMON_NUM_SS)
 		return -ENODEV;
 
+	pr_info("%s() name=%s\n", __func__, pdev->name);	
+
 	ss = &subsys[pdev->id];
 	mutex_init(&ss->lock);
+	ss->mutex_initialized = true;
 
 	switch (ss->transport) {
 	case TRANSPORT_SMD:
@@ -289,6 +321,11 @@ static struct platform_driver sysmon_driver = {
 
 static int __init sysmon_init(void)
 {
+	int i = 0;
+
+	for (i = 0; i < SYSMON_NUM_SS; i++)
+		subsys[i].mutex_initialized = false;
+
 	return platform_driver_register(&sysmon_driver);
 }
 subsys_initcall(sysmon_init);

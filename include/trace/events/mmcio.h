@@ -110,13 +110,58 @@ DEFINE_EVENT(file_op, vfs_fsync_done,
 	TP_ARGS(file)
 );
 
-TRACE_EVENT(mmc_request_done,
+TRACE_EVENT(mmc_req_start,
 
-	TP_PROTO(int opcode, unsigned start,  int blocks,  s64 time),
+	TP_PROTO(struct device *dev, int opcode, unsigned start,  int blocks),
 
-	TP_ARGS(opcode, start, blocks, time),
+	TP_ARGS(dev, opcode, start, blocks),
 
 	TP_STRUCT__entry(
+		__array(char, host, 6)
+		__field(int, opcode)
+		__field(unsigned, start)
+		__field(int, blocks)
+	),
+
+	TP_fast_assign(
+		__entry->opcode = opcode;
+		__entry->start = start;
+		__entry->blocks = blocks;
+		strncpy(__entry->host, dev_name(dev), 6);
+	),
+
+	TP_printk("%s: CMD%d start %u blocks %d",
+		__entry->host, __entry->opcode,
+		__entry->start, __entry->blocks)
+);
+
+TRACE_EVENT(mmc_req_end,
+
+	TP_PROTO(struct device *dev, int opcode),
+
+	TP_ARGS(dev, opcode),
+
+	TP_STRUCT__entry(
+		__array(char, host, 6)
+		__field(int, opcode)
+	),
+
+	TP_fast_assign(
+		__entry->opcode = opcode;
+		strncpy(__entry->host, dev_name(dev), 6);
+	),
+
+	TP_printk("%s: CMD%d end", __entry->host, __entry->opcode)
+);
+
+TRACE_EVENT(mmc_request_done,
+
+	TP_PROTO(struct device *dev, int opcode, unsigned start,  int blocks,  s64 time),
+
+	TP_ARGS(dev, opcode, start, blocks, time),
+
+	TP_STRUCT__entry(
+		__array(char, host, 6)
 		__field(int, opcode)
 		__field(unsigned, start)
 		__field(int, blocks)
@@ -128,9 +173,11 @@ TRACE_EVENT(mmc_request_done,
 		__entry->start = start;
 		__entry->blocks = blocks;
 		__entry->time = time;
+		strncpy(__entry->host, dev_name(dev), 6);
 	),
 
-	TP_printk("CMD%d start %u blocks %d, %lldms", __entry->opcode,
+	TP_printk("%s: CMD%d start %u blocks %d, %lldms",
+		__entry->host, __entry->opcode,
 		__entry->start, __entry->blocks, __entry->time)
 );
 
@@ -336,7 +383,6 @@ TRACE_EVENT(file_write_done,
 	TP_printk("%s [%s]", __get_str(name), __entry->comm)
 );
 #endif
-#endif /* if !defined(_TRACE_MMCIO_H) || defined(TRACE_HEADER_MULTI_READ) */
+#endif 
 
-/* This part must be outside protection */
 #include <trace/define_trace.h>

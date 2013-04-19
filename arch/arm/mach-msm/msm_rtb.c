@@ -31,15 +31,6 @@
 #define SENTINEL_BYTE_2 0xAA
 #define SENTINEL_BYTE_3 0xFF
 
-/* Write
- * 1) 3 bytes sentinel
- * 2) 1 bytes of log type
- * 3) 4 bytes of where the caller came from
- * 4) 4 bytes index
- * 4) 4 bytes extra data from the caller
- *
- * Total = 16 bytes.
- */
 struct msm_rtb_layout {
 	unsigned char sentinel[3];
 	unsigned char log_type;
@@ -67,13 +58,19 @@ static atomic_t msm_rtb_idx;
 #endif
 
 struct msm_rtb_state msm_rtb = {
-	.filter = 1 << LOGK_READL | 1 << LOGK_WRITEL | 1 << LOGK_LOGBUF
-		| 1 << LOGK_HOTPLUG | 1 << LOGK_CTXID | 1 << LOGK_IRQ | 1 << LOGK_DIE | 1 << LOGK_GPU,
+	.filter = (1 << LOGK_READL)|(1 << LOGK_WRITEL)|(1 << LOGK_LOGBUF)
+		|(1 << LOGK_HOTPLUG)|(1 << LOGK_CTXID)|(1 << LOGK_IRQ)|(1 << LOGK_DIE),
 	.enabled = 1,
 };
 
 module_param_named(filter, msm_rtb.filter, uint, 0644);
 module_param_named(enable, msm_rtb.enabled, int, 0644);
+
+int msm_rtb_enabled(void)
+{
+	return msm_rtb.enabled;
+}
+EXPORT_SYMBOL(msm_rtb_enabled);
 
 void msm_rtb_disable(void)
 {
@@ -164,10 +161,6 @@ static int msm_rtb_get_idx(void)
 	int cpu, i, offset;
 	atomic_t *index;
 
-	/*
-	 * ideally we would use get_cpu but this is a close enough
-	 * approximation for our purposes.
-	 */
 	cpu = raw_smp_processor_id();
 
 	index = &per_cpu(msm_rtb_idx_cpu, cpu);
@@ -175,7 +168,7 @@ static int msm_rtb_get_idx(void)
 	i = atomic_add_return(msm_rtb.step_size, index);
 	i -= msm_rtb.step_size;
 
-	/* Check if index has wrapped around */
+	
 	offset = (i & (msm_rtb.nentries - 1)) -
 		 ((i - msm_rtb.step_size) & (msm_rtb.nentries - 1));
 	if (offset < 0) {
@@ -194,7 +187,7 @@ static int msm_rtb_get_idx(void)
 	i = atomic_inc_return(&msm_rtb_idx);
 	i--;
 
-	/* Check if index has wrapped around */
+	
 	offset = (i & (msm_rtb.nentries - 1)) -
 		 ((i - 1) & (msm_rtb.nentries - 1));
 	if (offset < 0) {
@@ -249,12 +242,10 @@ int msm_rtb_probe(struct platform_device *pdev)
 	if (msm_rtb.size <= 0 || msm_rtb.size > SZ_1M)
 		return -EINVAL;
 
-	/*
-	 * The ioremap call is made separately to store the physical
-	 * address of the buffer. This is necessary for cases where
-	 * the only way to access the buffer is a physical address.
-	 */
-	msm_rtb.phys = allocate_contiguous_ebi_nomap(msm_rtb.size, SZ_4K);
+	if(d->buffer_start_addr == 0)
+		msm_rtb.phys = allocate_contiguous_ebi_nomap(msm_rtb.size, SZ_4K);
+	else
+		msm_rtb.phys = d->buffer_start_addr; 
 
 	if (!msm_rtb.phys)
 		return -ENOMEM;
@@ -268,7 +259,7 @@ int msm_rtb_probe(struct platform_device *pdev)
 
 	msm_rtb.nentries = msm_rtb.size / sizeof(struct msm_rtb_layout);
 
-	/* Round this down to a power of 2 */
+	
 	msm_rtb.nentries = __rounddown_pow_of_two(msm_rtb.nentries);
 
 	memset(msm_rtb.rtb, 0, msm_rtb.size);

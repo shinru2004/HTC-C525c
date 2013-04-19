@@ -78,7 +78,7 @@ static char dispV_timing[5] = {0xc1, 0x00, 0x10, 0x00, 0x01};
 static char dispCtrl[3] = {0xc3, 0x00, 0x19};
 static char test_mode_c4[2] = {0xc4, 0x03};
 static char dispH_timing[15] = {
-	/* TYPE_DCS_LWRITE */
+	
 	0xc5, 0x00, 0x01, 0x05,
 	0x04, 0x5e, 0x00, 0x00,
 	0x00, 0x00, 0x0b, 0x17,
@@ -193,12 +193,12 @@ static int mipi_toshiba_lcd_on(struct platform_device *pdev)
 		return -EINVAL;
 
 	if (TM_GET_PID(mfd->panel.id) == MIPI_DSI_PANEL_WVGA_PT)
-		mipi_dsi_cmds_tx(mfd, &toshiba_tx_buf,
+		mipi_dsi_cmds_tx(&toshiba_tx_buf,
 			toshiba_wvga_display_on_cmds,
 			ARRAY_SIZE(toshiba_wvga_display_on_cmds));
 	else if (TM_GET_PID(mfd->panel.id) == MIPI_DSI_PANEL_WSVGA_PT ||
 		TM_GET_PID(mfd->panel.id) == MIPI_DSI_PANEL_WUXGA)
-		mipi_dsi_cmds_tx(mfd, &toshiba_tx_buf,
+		mipi_dsi_cmds_tx(&toshiba_tx_buf,
 			toshiba_wsvga_display_on_cmds,
 			ARRAY_SIZE(toshiba_wsvga_display_on_cmds));
 	else
@@ -218,7 +218,7 @@ static int mipi_toshiba_lcd_off(struct platform_device *pdev)
 	if (mfd->key != MFD_KEY)
 		return -EINVAL;
 
-	mipi_dsi_cmds_tx(mfd, &toshiba_tx_buf, toshiba_display_off_cmds,
+	mipi_dsi_cmds_tx(&toshiba_tx_buf, toshiba_display_off_cmds,
 			ARRAY_SIZE(toshiba_display_off_cmds));
 
 	return 0;

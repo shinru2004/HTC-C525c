@@ -13,6 +13,7 @@
 
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
+#include <asm/io.h>
 #include <linux/ion.h>
 #include <mach/msm_iomap.h>
 #include <mach/irqs-8930.h>
@@ -24,14 +25,14 @@
 #include <mach/socinfo.h>
 #include <mach/iommu_domains.h>
 #include <mach/msm_rtb.h>
+#include <mach/msm_cache_dump.h>
 #include <sound/msm-dai-q6.h>
 #include <sound/apr_audio.h>
-
 
 #include "devices.h"
 #include "rpm_log.h"
 #include "rpm_stats.h"
-
+#include "footswitch.h"
 
 #ifdef CONFIG_MSM_MPM
 #include <mach/mpm.h>
@@ -264,8 +265,8 @@ static struct msm_rpm_log_platform_data msm_rpm_log_pdata = {
 		[MSM_RPM_LOG_PAGE_BUFFER]  = 0x000000A0,
 	},
 	.phys_size = SZ_8K,
-	.log_len = 4096,		  /* log's buffer length in bytes */
-	.log_len_mask = (4096 >> 2) - 1,  /* length mask in units of u32 */
+	.log_len = 4096,		  
+	.log_len_mask = (4096 >> 2) - 1,  
 };
 
 struct platform_device msm8930_rpm_log_device = {
@@ -289,7 +290,7 @@ struct platform_device msm8930_rpm_stat_device = {
 	},
 };
 
-static int msm8930_LPM_latency = 1000; /* >100 usec for WFI */
+static int msm8930_LPM_latency = 1000; 
 
 struct platform_device msm8930_cpu_idle_device = {
 	.name   = "msm_cpu_idle",
@@ -356,18 +357,93 @@ struct platform_device msm_bus_8930_cpss_fpb = {
 	.name  = "msm_bus_fabric",
 	.id    = MSM_BUS_FAB_CPSS_FPB,
 };
-//HTC_AUD ++
-struct msm_mi2s_pdata mi2s_data = {
-	.rx_sd_lines = MSM_MI2S_SD0 ,   /* sd0 */
-	.tx_sd_lines = MSM_MI2S_SD3 ,   /* sd3 */
-};
-struct platform_device msm_cpudai_mi2s = {
-	.name	= "msm-dai-q6-mi2s",
-	.id	= -1,
-	.dev = {
-		.platform_data = &mi2s_data,
+
+static struct fs_driver_data gfx3d_fs_data = {
+	.clks = (struct fs_clk_data[]){
+		{ .name = "core_clk", .reset_rate = 27000000 },
+		{ .name = "iface_clk" },
+		{ .name = "bus_clk" },
+		{ 0 }
 	},
+	.bus_port0 = MSM_BUS_MASTER_GRAPHICS_3D,
 };
+
+static struct fs_driver_data ijpeg_fs_data = {
+	.clks = (struct fs_clk_data[]){
+		{ .name = "core_clk" },
+		{ .name = "iface_clk" },
+		{ .name = "bus_clk" },
+		{ 0 }
+	},
+	.bus_port0 = MSM_BUS_MASTER_JPEG_ENC,
+};
+
+static struct fs_driver_data mdp_fs_data = {
+	.clks = (struct fs_clk_data[]){
+		{ .name = "core_clk" },
+		{ .name = "iface_clk" },
+		{ .name = "bus_clk" },
+		{ .name = "vsync_clk" },
+		{ .name = "lut_clk" },
+		{ .name = "tv_src_clk" },
+		{ .name = "tv_clk" },
+		{ 0 }
+	},
+	.bus_port0 = MSM_BUS_MASTER_MDP_PORT0,
+	.bus_port1 = MSM_BUS_MASTER_MDP_PORT1,
+};
+
+static struct fs_driver_data rot_fs_data = {
+	.clks = (struct fs_clk_data[]){
+		{ .name = "core_clk" },
+		{ .name = "iface_clk" },
+		{ .name = "bus_clk" },
+		{ 0 }
+	},
+	.bus_port0 = MSM_BUS_MASTER_ROTATOR,
+};
+
+static struct fs_driver_data ved_fs_data = {
+	.clks = (struct fs_clk_data[]){
+		{ .name = "core_clk" },
+		{ .name = "iface_clk" },
+		{ .name = "bus_clk" },
+		{ 0 }
+	},
+	.bus_port0 = MSM_BUS_MASTER_HD_CODEC_PORT0,
+	.bus_port1 = MSM_BUS_MASTER_HD_CODEC_PORT1,
+};
+
+static struct fs_driver_data vfe_fs_data = {
+	.clks = (struct fs_clk_data[]){
+		{ .name = "core_clk" },
+		{ .name = "iface_clk" },
+		{ .name = "bus_clk" },
+		{ 0 }
+	},
+	.bus_port0 = MSM_BUS_MASTER_VFE,
+};
+
+static struct fs_driver_data vpe_fs_data = {
+	.clks = (struct fs_clk_data[]){
+		{ .name = "core_clk" },
+		{ .name = "iface_clk" },
+		{ .name = "bus_clk" },
+		{ 0 }
+	},
+	.bus_port0 = MSM_BUS_MASTER_VPE,
+};
+
+struct platform_device *msm8930_footswitch[] __initdata = {
+	FS_8X60(FS_MDP,    "vdd",	"mdp.0",	&mdp_fs_data),
+	FS_8X60(FS_ROT,    "vdd",	"msm_rotator.0", &rot_fs_data),
+	FS_8X60(FS_IJPEG,  "vdd",	"msm_gemini.0", &ijpeg_fs_data),
+	FS_8X60(FS_VFE,    "vdd",	"msm_vfe.0",	&vfe_fs_data),
+	FS_8X60(FS_VPE,    "vdd",	"msm_vpe.0",	&vpe_fs_data),
+	FS_8X60(FS_GFX3D,  "vdd",	"kgsl-3d0.0",	&gfx3d_fs_data),
+	FS_8X60(FS_VED,    "vdd",	"msm_vidc.0",	&ved_fs_data),
+};
+unsigned msm8930_num_footswitch __initdata = ARRAY_SIZE(msm8930_footswitch);
 
 struct platform_device apq_cpudai_pri_i2s_rx = {
 	.name = "msm-dai-q6",
@@ -379,64 +455,6 @@ struct platform_device apq_cpudai_pri_i2s_tx = {
 	.id = 1,
 };
 
-struct platform_device aux_pcm = {
-	.name	= "msm-pcm-dsp",
-	.id	= -1,
-};
-
-struct platform_device aux_pcm_routing = {
-	.name	= "msm-pcm-routing",
-	.id	= -1,
-};
-
-/*
- * Machine specific data for AUX PCM Interface
- * which the driver will  be unware of.
- */
-struct msm_dai_auxpcm_pdata cpu_auxpcm_pdata = {
-	.clk = "pcm_clk",
-	.mode = AFE_PCM_CFG_MODE_PCM,
-	.sync = AFE_PCM_CFG_SYNC_INT,
-	.frame = AFE_PCM_CFG_FRM_256BPF,
-	.quant = AFE_PCM_CFG_QUANT_LINEAR_NOPAD,
-	.slot = 0,
-	.data = AFE_PCM_CFG_CDATAOE_MASTER,
-	.pcm_clk_rate = 2048000,
-};
-
-struct platform_device cpudai_auxpcm_rx = {
-	.name = "msm-dai-q6",
-	.id = 2,
-	.dev = {
-		.platform_data = &cpu_auxpcm_pdata,
-	},
-};
-
-struct platform_device cpudai_auxpcm_tx = {
-	.name = "msm-dai-q6",
-	.id = 3,
-	.dev = {
-		.platform_data = &cpu_auxpcm_pdata,
-	},
-};
-
-struct platform_device pcm_voice = {
-	.name	= "msm-pcm-voice",
-	.id	= -1,
-};
-
-struct platform_device pcm_hostless = {
-	.name	= "msm-pcm-hostless",
-	.id	= -1,
-};
-
-struct platform_device pcm_afe = {
-	.name	= "msm-pcm-afe",
-	.id	= -1,
-};
-
-//HTC_AUD --
-/* MSM Video core device */
 #ifdef CONFIG_MSM_BUS_SCALING
 static struct msm_bus_vectors vidc_init_vectors[] = {
 	{
@@ -689,6 +707,7 @@ struct msm_vidc_platform_data apq8930_vidc_platform_data = {
 #endif
 	.disable_dmx = 1,
 	.disable_fullhd = 0,
+	.fw_addr = 0x9fe00000,
 };
 
 struct platform_device apq8930_msm_device_vidc = {
@@ -717,67 +736,67 @@ void __init msm8930_add_vidc_device(void)
 }
 
 struct msm_iommu_domain_name msm8930_iommu_ctx_names[] = {
-	/* Camera */
+	
 	{
 		.name = "vpe_src",
 		.domain = CAMERA_DOMAIN,
 	},
-	/* Camera */
+	
 	{
 		.name = "vpe_dst",
 		.domain = CAMERA_DOMAIN,
 	},
-	/* Camera */
+	
 	{
 		.name = "vfe_imgwr",
 		.domain = CAMERA_DOMAIN,
 	},
-	/* Camera */
+	
 	{
 		.name = "vfe_misc",
 		.domain = CAMERA_DOMAIN,
 	},
-	/* Camera */
+	
 	{
 		.name = "ijpeg_src",
 		.domain = CAMERA_DOMAIN,
 	},
-	/* Camera */
+	
 	{
 		.name = "ijpeg_dst",
 		.domain = CAMERA_DOMAIN,
 	},
-	/* Camera */
+	
 	{
 		.name = "jpegd_src",
 		.domain = CAMERA_DOMAIN,
 	},
-	/* Camera */
+	
 	{
 		.name = "jpegd_dst",
 		.domain = CAMERA_DOMAIN,
 	},
-	/* Rotator */
+	
 	{
 		.name = "rot_src",
 		.domain = ROTATOR_SRC_DOMAIN,
 	},
-	/* Rotator */
+	
 	{
 		.name = "rot_dst",
 		.domain = ROTATOR_SRC_DOMAIN,
 	},
-	/* Video */
+	
 	{
 		.name = "vcodec_a_mm1",
 		.domain = VIDEO_DOMAIN,
 	},
-	/* Video */
+	
 	{
 		.name = "vcodec_b_mm2",
 		.domain = VIDEO_DOMAIN,
 	},
-	/* Video */
+	
 	{
 		.name = "vcodec_a_stream",
 		.domain = VIDEO_DOMAIN,
@@ -785,27 +804,20 @@ struct msm_iommu_domain_name msm8930_iommu_ctx_names[] = {
 };
 
 static struct mem_pool msm8930_video_pools[] =  {
-	/*
-	 * Video hardware has the following requirements:
-	 * 1. All video addresses used by the video hardware must be at a higher
-	 *    address than video firmware address.
-	 * 2. Video hardware can only access a range of 256MB from the base of
-	 *    the video firmware.
-	*/
 	[VIDEO_FIRMWARE_POOL] =
-	/* Low addresses, intended for video firmware */
+	
 		{
 			.paddr	= SZ_128K,
 			.size	= SZ_16M - SZ_128K,
 		},
 	[VIDEO_MAIN_POOL] =
-	/* Main video pool */
+	
 		{
 			.paddr	= SZ_16M,
 			.size	= SZ_256M - SZ_16M,
 		},
 	[GEN_POOL] =
-	/* Remaining address space up to 2G */
+	
 		{
 			.paddr	= SZ_256M,
 			.size	= SZ_2G - SZ_256M,
@@ -814,7 +826,7 @@ static struct mem_pool msm8930_video_pools[] =  {
 
 static struct mem_pool msm8930_camera_pools[] =  {
 	[GEN_POOL] =
-	/* One address space for camera */
+	
 		{
 			.paddr	= SZ_128K,
 			.size	= SZ_2G - SZ_128K,
@@ -823,7 +835,7 @@ static struct mem_pool msm8930_camera_pools[] =  {
 
 static struct mem_pool msm8930_display_read_pools[] =  {
 	[GEN_POOL] =
-	/* One address space for display reads */
+	
 		{
 			.paddr	= SZ_128K,
 			.size	= SZ_2G - SZ_128K,
@@ -832,7 +844,7 @@ static struct mem_pool msm8930_display_read_pools[] =  {
 
 static struct mem_pool msm8930_rotator_src_pools[] =  {
 	[GEN_POOL] =
-	/* One address space for rotator src */
+	
 		{
 			.paddr	= SZ_128K,
 			.size	= SZ_2G - SZ_128K,
@@ -871,7 +883,7 @@ struct platform_device msm8930_iommu_domain_device = {
 	.id = -1,
 	.dev = {
 		.platform_data = &msm8930_iommu_domain_pdata,
-	},
+	}
 };
 
 struct msm_rtb_platform_data msm8930_rtb_pdata = {
@@ -894,5 +906,21 @@ struct platform_device msm8930_rtb_device = {
 	.id             = -1,
 	.dev            = {
 		.platform_data = &msm8930_rtb_pdata,
+	},
+};
+
+#define MSM8930_L1_SIZE  SZ_1M
+#define MSM8930_L2_SIZE  SZ_4M
+
+struct msm_cache_dump_platform_data msm8930_cache_dump_pdata = {
+	.l2_size = MSM8930_L2_SIZE,
+	.l1_size = MSM8930_L1_SIZE,
+};
+
+struct platform_device msm8930_cache_dump_device = {
+	.name           = "msm_cache_dump",
+	.id             = -1,
+	.dev            = {
+		.platform_data = &msm8930_cache_dump_pdata,
 	},
 };

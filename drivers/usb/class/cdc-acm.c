@@ -39,6 +39,7 @@
 #include <linux/serial.h>
 #include <linux/tty_driver.h>
 #include <linux/tty_flip.h>
+#include <linux/serial.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/uaccess.h>
@@ -58,16 +59,52 @@ static struct usb_driver acm_driver;
 static struct tty_driver *acm_tty_driver;
 static struct acm *acm_table[ACM_TTY_MINORS];
 
-static DEFINE_MUTEX(open_mutex);
+static DEFINE_MUTEX(acm_table_lock);
 
-#define ACM_READY(acm)	(acm && acm->dev && acm->port.count)
 
-static const struct tty_port_operations acm_port_ops = {
-};
+static struct acm *acm_get_by_index(unsigned index)
+{
+	struct acm *acm;
 
-/*
- * Functions for ACM control messages.
- */
+	mutex_lock(&acm_table_lock);
+	acm = acm_table[index];
+	if (acm) {
+		mutex_lock(&acm->mutex);
+		if (acm->disconnected) {
+			mutex_unlock(&acm->mutex);
+			acm = NULL;
+		} else {
+			tty_port_get(&acm->port);
+			mutex_unlock(&acm->mutex);
+		}
+	}
+	mutex_unlock(&acm_table_lock);
+	return acm;
+}
+
+static int acm_alloc_minor(struct acm *acm)
+{
+	int minor;
+
+	mutex_lock(&acm_table_lock);
+	for (minor = 0; minor < ACM_TTY_MINORS; minor++) {
+		if (!acm_table[minor]) {
+			acm_table[minor] = acm;
+			break;
+		}
+	}
+	mutex_unlock(&acm_table_lock);
+
+	return minor;
+}
+
+static void acm_release_minor(struct acm *acm)
+{
+	mutex_lock(&acm_table_lock);
+	acm_table[acm->minor] = NULL;
+	mutex_unlock(&acm_table_lock);
+}
+
 
 static int acm_ctrl_msg(struct acm *acm, int request, int value,
 							void *buf, int len)
@@ -82,9 +119,6 @@ static int acm_ctrl_msg(struct acm *acm, int request, int value,
 	return retval < 0 ? retval : 0;
 }
 
-/* devices aren't required to support these requests.
- * the cdc acm descriptor tells whether they do...
- */
 #define acm_set_control(acm, control) \
 	acm_ctrl_msg(acm, USB_CDC_REQ_SET_CONTROL_LINE_STATE, control, NULL, 0)
 #define acm_set_line(acm, line) \
@@ -92,10 +126,6 @@ static int acm_ctrl_msg(struct acm *acm, int request, int value,
 #define acm_send_break(acm, ms) \
 	acm_ctrl_msg(acm, USB_CDC_REQ_SEND_BREAK, ms, NULL, 0)
 
-/*
- * Write buffer management.
- * All of these assume proper locks taken by the caller.
- */
 
 static int acm_wb_alloc(struct acm *acm)
 {
@@ -129,9 +159,6 @@ static int acm_wb_is_avail(struct acm *acm)
 	return n;
 }
 
-/*
- * Finish write. Caller must hold acm->write_lock
- */
 static void acm_write_done(struct acm *acm, struct acm_wb *wb)
 {
 	wb->use = 0;
@@ -139,11 +166,6 @@ static void acm_write_done(struct acm *acm, struct acm_wb *wb)
 	usb_autopm_put_interface_async(acm->control);
 }
 
-/*
- * Poke write.
- *
- * the caller is responsible for locking
- */
 
 static int acm_start_wb(struct acm *acm, struct acm_wb *wb)
 {
@@ -188,7 +210,7 @@ static int acm_write_start(struct acm *acm, int wbn)
 		else
 			usb_autopm_put_interface_async(acm->control);
 		spin_unlock_irqrestore(&acm->write_lock, flags);
-		return 0;	/* A white lie */
+		return 0;	
 	}
 	usb_mark_last_busy(acm->dev);
 
@@ -198,9 +220,6 @@ static int acm_write_start(struct acm *acm, int wbn)
 	return rc;
 
 }
-/*
- * attributes exported through sysfs
- */
 static ssize_t show_caps
 (struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -233,11 +252,7 @@ static ssize_t show_country_rel_date
 }
 
 static DEVICE_ATTR(iCountryCodeRelDate, S_IRUGO, show_country_rel_date, NULL);
-/*
- * Interrupt handlers for various ACM device responses
- */
 
-/* control interface reports status changes with "interrupt" transfers */
 static void acm_ctrl_irq(struct urb *urb)
 {
 	struct acm *acm = urb->context;
@@ -250,12 +265,12 @@ static void acm_ctrl_irq(struct urb *urb)
 
 	switch (status) {
 	case 0:
-		/* success */
+		
 		break;
 	case -ECONNRESET:
 	case -ENOENT:
 	case -ESHUTDOWN:
-		/* this urb is terminated, clean up */
+		
 		dev_dbg(&acm->control->dev,
 				"%s - urb shutting down with status: %d\n",
 				__func__, status);
@@ -266,9 +281,6 @@ static void acm_ctrl_irq(struct urb *urb)
 				__func__, status);
 		goto exit;
 	}
-
-	if (!ACM_READY(acm))
-		goto exit;
 
 	usb_mark_last_busy(acm->dev);
 
@@ -401,7 +413,7 @@ static void acm_read_bulk_callback(struct urb *urb)
 	}
 	acm_process_read_urb(acm, urb);
 
-	/* throttle device if requested by tty */
+	
 	spin_lock_irqsave(&acm->read_lock, flags);
 	acm->throttled = acm->throttle_req;
 	if (!acm->throttled && !acm->susp_count) {
@@ -412,7 +424,6 @@ static void acm_read_bulk_callback(struct urb *urb)
 	}
 }
 
-/* data interface wrote those outgoing bytes */
 static void acm_write_bulk(struct urb *urb)
 {
 	struct acm_wb *wb = urb->context;
@@ -429,8 +440,7 @@ static void acm_write_bulk(struct urb *urb)
 	spin_lock_irqsave(&acm->write_lock, flags);
 	acm_write_done(acm, wb);
 	spin_unlock_irqrestore(&acm->write_lock, flags);
-	if (ACM_READY(acm))
-		schedule_work(&acm->work);
+	schedule_work(&acm->work);
 }
 
 static void acm_softint(struct work_struct *work)
@@ -440,8 +450,6 @@ static void acm_softint(struct work_struct *work)
 
 	dev_vdbg(&acm->data->dev, "%s\n", __func__);
 
-	if (!ACM_READY(acm))
-		return;
 	tty = tty_port_tty_get(&acm->port);
 	if (!tty)
 		return;
@@ -449,97 +457,119 @@ static void acm_softint(struct work_struct *work)
 	tty_kref_put(tty);
 }
 
-/*
- * TTY handlers
- */
+
+static int acm_tty_install(struct tty_driver *driver, struct tty_struct *tty)
+{
+	struct acm *acm;
+	int retval;
+
+	dev_dbg(tty->dev, "%s\n", __func__);
+
+	acm = acm_get_by_index(tty->index);
+	if (!acm)
+		return -ENODEV;
+
+	retval = tty_standard_install(driver, tty);
+	if (retval)
+		goto error_init_termios;
+
+	tty->driver_data = acm;
+
+	return 0;
+
+error_init_termios:
+	tty_port_put(&acm->port);
+	return retval;
+}
 
 static int acm_tty_open(struct tty_struct *tty, struct file *filp)
 {
-	struct acm *acm;
-	int rv = -ENODEV;
+	struct acm *acm = tty->driver_data;
 
-	mutex_lock(&open_mutex);
+	dev_dbg(tty->dev, "%s\n", __func__);
 
-	acm = acm_table[tty->index];
-	if (!acm || !acm->dev)
-		goto out;
-	else
-		rv = 0;
+	return tty_port_open(&acm->port, tty, filp);
+}
+
+static int acm_port_activate(struct tty_port *port, struct tty_struct *tty)
+{
+	struct acm *acm = container_of(port, struct acm, port);
+	int retval = -ENODEV;
 
 	dev_dbg(&acm->control->dev, "%s\n", __func__);
 
-	set_bit(TTY_NO_WRITE_SPLIT, &tty->flags);
-
-	tty->driver_data = acm;
-	tty_port_tty_set(&acm->port, tty);
-
-	if (usb_autopm_get_interface(acm->control) < 0)
-		goto early_bail;
-	else
-		acm->control->needs_remote_wakeup = 1;
-
 	mutex_lock(&acm->mutex);
-	if (acm->port.count++) {
-		mutex_unlock(&acm->mutex);
-		usb_autopm_put_interface(acm->control);
-		goto out;
-	}
+	if (acm->disconnected)
+		goto disconnected;
+
+	retval = usb_autopm_get_interface(acm->control);
+	if (retval)
+		goto error_get_interface;
+
+	set_bit(TTY_NO_WRITE_SPLIT, &tty->flags);
+	acm->control->needs_remote_wakeup = 1;
 
 	acm->ctrlurb->dev = acm->dev;
 	if (usb_submit_urb(acm->ctrlurb, GFP_KERNEL)) {
 		dev_err(&acm->control->dev,
 			"%s - usb_submit_urb(ctrl irq) failed\n", __func__);
-		goto bail_out;
+		goto error_submit_urb;
 	}
 
-	if (0 > acm_set_control(acm, acm->ctrlout = ACM_CTRL_DTR | ACM_CTRL_RTS) &&
+	acm->ctrlout = ACM_CTRL_DTR | ACM_CTRL_RTS;
+	if (acm_set_control(acm, acm->ctrlout) < 0 &&
 	    (acm->ctrl_caps & USB_CDC_CAP_LINE))
-		goto bail_out;
+		goto error_set_control;
 
 	usb_autopm_put_interface(acm->control);
+
+	spin_lock_irq(&acm->read_lock);
+	acm->throttled = 0;
+	acm->throttle_req = 0;
+	spin_unlock_irq(&acm->read_lock);
 
 	if (acm_submit_read_urbs(acm, GFP_KERNEL))
-		goto bail_out;
-
-	set_bit(ASYNCB_INITIALIZED, &acm->port.flags);
-	rv = tty_port_block_til_ready(&acm->port, tty, filp);
+		goto error_submit_read_urbs;
 
 	mutex_unlock(&acm->mutex);
-out:
-	mutex_unlock(&open_mutex);
-	return rv;
 
-bail_out:
-	acm->port.count--;
-	mutex_unlock(&acm->mutex);
+	return 0;
+
+error_submit_read_urbs:
+	acm->ctrlout = 0;
+	acm_set_control(acm, acm->ctrlout);
+error_set_control:
+	usb_kill_urb(acm->ctrlurb);
+error_submit_urb:
 	usb_autopm_put_interface(acm->control);
-early_bail:
-	mutex_unlock(&open_mutex);
-	tty_port_tty_set(&acm->port, NULL);
-	return -EIO;
+error_get_interface:
+disconnected:
+	mutex_unlock(&acm->mutex);
+	return retval;
 }
 
-static void acm_tty_unregister(struct acm *acm)
+static void acm_port_destruct(struct tty_port *port)
 {
-	int i;
+	struct acm *acm = container_of(port, struct acm, port);
+
+	dev_dbg(&acm->control->dev, "%s\n", __func__);
 
 	tty_unregister_device(acm_tty_driver, acm->minor);
+	acm_release_minor(acm);
 	usb_put_intf(acm->control);
-	acm_table[acm->minor] = NULL;
-	usb_free_urb(acm->ctrlurb);
-	for (i = 0; i < ACM_NW; i++)
-		usb_free_urb(acm->wb[i].urb);
-	for (i = 0; i < acm->rx_buflimit; i++)
-		usb_free_urb(acm->read_urbs[i]);
 	kfree(acm->country_codes);
 	kfree(acm);
 }
 
-static void acm_port_down(struct acm *acm)
+static void acm_port_shutdown(struct tty_port *port)
 {
+	struct acm *acm = container_of(port, struct acm, port);
 	int i;
 
-	if (acm->dev) {
+	dev_dbg(&acm->control->dev, "%s\n", __func__);
+
+	mutex_lock(&acm->mutex);
+	if (!acm->disconnected) {
 		usb_autopm_get_interface(acm->control);
 		acm_set_control(acm, acm->ctrlout = 0);
 		usb_kill_urb(acm->ctrlurb);
@@ -550,48 +580,28 @@ static void acm_port_down(struct acm *acm)
 		acm->control->needs_remote_wakeup = 0;
 		usb_autopm_put_interface(acm->control);
 	}
+	mutex_unlock(&acm->mutex);
+}
+
+static void acm_tty_cleanup(struct tty_struct *tty)
+{
+	struct acm *acm = tty->driver_data;
+	dev_dbg(&acm->control->dev, "%s\n", __func__);
+	tty_port_put(&acm->port);
 }
 
 static void acm_tty_hangup(struct tty_struct *tty)
 {
-	struct acm *acm;
-
-	mutex_lock(&open_mutex);
-	acm = tty->driver_data;
-
-	if (!acm)
-		goto out;
-
+	struct acm *acm = tty->driver_data;
+	dev_dbg(&acm->control->dev, "%s\n", __func__);
 	tty_port_hangup(&acm->port);
-	acm_port_down(acm);
-
-out:
-	mutex_unlock(&open_mutex);
 }
 
 static void acm_tty_close(struct tty_struct *tty, struct file *filp)
 {
 	struct acm *acm = tty->driver_data;
-
-	/* Perform the closing process and see if we need to do the hardware
-	   shutdown */
-	if (!acm)
-		return;
-
-	mutex_lock(&open_mutex);
-	if (tty_port_close_start(&acm->port, tty, filp) == 0) {
-		if (!acm->dev) {
-			tty_port_tty_set(&acm->port, NULL);
-			acm_tty_unregister(acm);
-			tty->driver_data = NULL;
-		}
-		mutex_unlock(&open_mutex);
-		return;
-	}
-	acm_port_down(acm);
-	tty_port_close_end(&acm->port, tty);
-	tty_port_tty_set(&acm->port, NULL);
-	mutex_unlock(&open_mutex);
+	dev_dbg(&acm->control->dev, "%s\n", __func__);
+	tty_port_close(&acm->port, tty, filp);
 }
 
 static int acm_tty_write(struct tty_struct *tty,
@@ -603,8 +613,6 @@ static int acm_tty_write(struct tty_struct *tty,
 	int wbn;
 	struct acm_wb *wb;
 
-	if (!ACM_READY(acm))
-		return -EINVAL;
 	if (!count)
 		return 0;
 
@@ -633,32 +641,20 @@ static int acm_tty_write(struct tty_struct *tty,
 static int acm_tty_write_room(struct tty_struct *tty)
 {
 	struct acm *acm = tty->driver_data;
-	if (!ACM_READY(acm))
-		return -EINVAL;
-	/*
-	 * Do not let the line discipline to know that we have a reserve,
-	 * or it might get too enthusiastic.
-	 */
 	return acm_wb_is_avail(acm) ? acm->writesize : 0;
 }
 
 static int acm_tty_chars_in_buffer(struct tty_struct *tty)
 {
 	struct acm *acm = tty->driver_data;
-	if (!ACM_READY(acm))
+	if (acm->disconnected)
 		return 0;
-	/*
-	 * This is inaccurate (overcounts), but it works.
-	 */
 	return (ACM_NW - acm_wb_is_avail(acm)) * acm->writesize;
 }
 
 static void acm_tty_throttle(struct tty_struct *tty)
 {
 	struct acm *acm = tty->driver_data;
-
-	if (!ACM_READY(acm))
-		return;
 
 	spin_lock_irq(&acm->read_lock);
 	acm->throttle_req = 1;
@@ -669,9 +665,6 @@ static void acm_tty_unthrottle(struct tty_struct *tty)
 {
 	struct acm *acm = tty->driver_data;
 	unsigned int was_throttled;
-
-	if (!ACM_READY(acm))
-		return;
 
 	spin_lock_irq(&acm->read_lock);
 	was_throttled = acm->throttled;
@@ -687,8 +680,7 @@ static int acm_tty_break_ctl(struct tty_struct *tty, int state)
 {
 	struct acm *acm = tty->driver_data;
 	int retval;
-	if (!ACM_READY(acm))
-		return -EINVAL;
+
 	retval = acm_send_break(acm, state ? 0xffff : 0);
 	if (retval < 0)
 		dev_dbg(&acm->control->dev, "%s - send break failed\n",
@@ -699,9 +691,6 @@ static int acm_tty_break_ctl(struct tty_struct *tty, int state)
 static int acm_tty_tiocmget(struct tty_struct *tty)
 {
 	struct acm *acm = tty->driver_data;
-
-	if (!ACM_READY(acm))
-		return -EINVAL;
 
 	return (acm->ctrlout & ACM_CTRL_DTR ? TIOCM_DTR : 0) |
 	       (acm->ctrlout & ACM_CTRL_RTS ? TIOCM_RTS : 0) |
@@ -717,9 +706,6 @@ static int acm_tty_tiocmset(struct tty_struct *tty,
 	struct acm *acm = tty->driver_data;
 	unsigned int newctrl;
 
-	if (!ACM_READY(acm))
-		return -EINVAL;
-
 	newctrl = acm->ctrlout;
 	set = (set & TIOCM_DTR ? ACM_CTRL_DTR : 0) |
 					(set & TIOCM_RTS ? ACM_CTRL_RTS : 0);
@@ -733,15 +719,37 @@ static int acm_tty_tiocmset(struct tty_struct *tty,
 	return acm_set_control(acm, acm->ctrlout = newctrl);
 }
 
+static int get_serial_info(struct acm *acm, struct serial_struct __user *info)
+{
+	struct serial_struct tmp;
+
+	if (!info)
+		return -EINVAL;
+
+	memset(&tmp, 0, sizeof(tmp));
+	tmp.flags = ASYNC_LOW_LATENCY;
+	tmp.xmit_fifo_size = acm->writesize;
+	tmp.baud_base = le32_to_cpu(acm->line.dwDTERate);
+
+	if (copy_to_user(info, &tmp, sizeof(tmp)))
+		return -EFAULT;
+	else
+		return 0;
+}
+
 static int acm_tty_ioctl(struct tty_struct *tty,
 					unsigned int cmd, unsigned long arg)
 {
 	struct acm *acm = tty->driver_data;
+	int rv = -ENOIOCTLCMD;
 
-	if (!ACM_READY(acm))
-		return -EINVAL;
+	switch (cmd) {
+	case TIOCGSERIAL: 
+		rv = get_serial_info(acm, (struct serial_struct __user *) arg);
+		break;
+	}
 
-	return -ENOIOCTLCMD;
+	return rv;
 }
 
 static const __u32 acm_tty_speed[] = {
@@ -764,16 +772,13 @@ static void acm_tty_set_termios(struct tty_struct *tty,
 	struct usb_cdc_line_coding newline;
 	int newctrl = acm->ctrlout;
 
-	if (!ACM_READY(acm))
-		return;
-
 	newline.dwDTERate = cpu_to_le32(tty_get_baud_rate(tty));
 	newline.bCharFormat = termios->c_cflag & CSTOPB ? 2 : 0;
 	newline.bParityType = termios->c_cflag & PARENB ?
 				(termios->c_cflag & PARODD ? 1 : 2) +
 				(termios->c_cflag & CMSPAR ? 2 : 0) : 0;
 	newline.bDataBits = acm_tty_size[(termios->c_cflag & CSIZE) >> 4];
-	/* FIXME: Needs to clear unsupported bits in the termios */
+	
 	acm->clocal = ((termios->c_cflag & CLOCAL) != 0);
 
 	if (!newline.dwDTERate) {
@@ -796,11 +801,13 @@ static void acm_tty_set_termios(struct tty_struct *tty,
 	}
 }
 
-/*
- * USB probe and disconnect routines.
- */
+static const struct tty_port_operations acm_port_ops = {
+	.shutdown = acm_port_shutdown,
+	.activate = acm_port_activate,
+	.destruct = acm_port_destruct,
+};
 
-/* Little helpers: write/read buffers free */
+
 static void acm_write_buffers_free(struct acm *acm)
 {
 	int i;
@@ -821,7 +828,6 @@ static void acm_read_buffers_free(struct acm *acm)
 			  acm->read_buffers[i].base, acm->read_buffers[i].dma);
 }
 
-/* Little helper: write buffers allocate */
 static int acm_write_buffers_alloc(struct acm *acm)
 {
 	int i;
@@ -869,18 +875,18 @@ static int acm_probe(struct usb_interface *intf,
 	int i;
 	int combined_interfaces = 0;
 
-	/* normal quirks */
+	
 	quirks = (unsigned long)id->driver_info;
 	num_rx_buf = (quirks == SINGLE_RX_URB) ? 1 : ACM_NR;
 
-	/* handle quirks deadly to normal probing*/
+	
 	if (quirks == NO_UNION_NORMAL) {
 		data_interface = usb_ifnum_to_if(usb_dev, 1);
 		control_interface = usb_ifnum_to_if(usb_dev, 0);
 		goto skip_normal_probe;
 	}
 
-	/* normal probing*/
+	
 	if (!buffer) {
 		dev_err(&intf->dev, "Weird descriptor references\n");
 		return -EINVAL;
@@ -908,7 +914,7 @@ static int acm_probe(struct usb_interface *intf,
 		}
 
 		switch (buffer[2]) {
-		case USB_CDC_UNION_TYPE: /* we've found it */
+		case USB_CDC_UNION_TYPE: 
 			if (union_header) {
 				dev_err(&intf->dev, "More than one "
 					"union descriptor, skipping ...\n");
@@ -916,11 +922,11 @@ static int acm_probe(struct usb_interface *intf,
 			}
 			union_header = (struct usb_cdc_union_desc *)buffer;
 			break;
-		case USB_CDC_COUNTRY_TYPE: /* export through sysfs*/
+		case USB_CDC_COUNTRY_TYPE: 
 			cfd = (struct usb_cdc_country_functional_desc *)buffer;
 			break;
-		case USB_CDC_HEADER_TYPE: /* maybe check version */
-			break; /* for now we ignore it */
+		case USB_CDC_HEADER_TYPE: 
+			break; 
 		case USB_CDC_ACM_TYPE:
 			ac_management_function = buffer[3];
 			break;
@@ -931,9 +937,6 @@ static int acm_probe(struct usb_interface *intf,
 				dev_err(&intf->dev, "This device cannot do calls on its own. It is not a modem.\n");
 			break;
 		default:
-			/* there are LOTS more CDC descriptors that
-			 * could legitimately be found here.
-			 */
 			dev_dbg(&intf->dev, "Ignoring descriptor: "
 					"type %02x, length %d\n",
 					buffer[2], buffer[0]);
@@ -947,7 +950,7 @@ next_desc:
 	if (!union_header) {
 		if (call_interface_num > 0) {
 			dev_dbg(&intf->dev, "No union descriptor, using call management descriptor\n");
-			/* quirks for Droids MuIn LCD */
+			
 			if (quirks & NO_DATA_INTERFACE)
 				data_interface = usb_ifnum_to_if(usb_dev, 0);
 			else
@@ -977,10 +980,10 @@ next_desc:
 		dev_dbg(&intf->dev, "Separate call control interface. That is not fully supported.\n");
 
 	if (control_interface == data_interface) {
-		/* some broken devices designed for windows work this way */
+		
 		dev_warn(&intf->dev,"Control and data interfaces are not separated!\n");
 		combined_interfaces = 1;
-		/* a popular other OS doesn't use it */
+		
 		quirks |= NO_CAP_LINE;
 		if (data_interface->cur_altsetting->desc.bNumEndpoints != 3) {
 			dev_err(&intf->dev, "This needs exactly 3 endpoints\n");
@@ -1008,7 +1011,7 @@ look_for_collapsed_interface:
 
 skip_normal_probe:
 
-	/*workaround for switched interfaces */
+	
 	if (data_interface->cur_altsetting->desc.bInterfaceClass
 						!= CDC_DATA_INTERFACE_TYPE) {
 		if (control_interface->cur_altsetting->desc.bInterfaceClass
@@ -1024,12 +1027,12 @@ skip_normal_probe:
 		}
 	}
 
-	/* Accept probe requests only for the control interface */
+	
 	if (!combined_interfaces && intf != control_interface)
 		return -ENODEV;
 
 	if (!combined_interfaces && usb_interface_claimed(data_interface)) {
-		/* valid in this context */
+		
 		dev_dbg(&intf->dev, "The data interface isn't available\n");
 		return -EBUSY;
 	}
@@ -1043,9 +1046,9 @@ skip_normal_probe:
 	epwrite = &data_interface->cur_altsetting->endpoint[1].desc;
 
 
-	/* workaround for switched endpoints */
+	
 	if (!usb_endpoint_dir_in(epread)) {
-		/* descriptors are swapped */
+		
 		struct usb_endpoint_descriptor *t;
 		dev_dbg(&intf->dev,
 			"The data interface has switched endpoints\n");
@@ -1055,12 +1058,6 @@ skip_normal_probe:
 	}
 made_compressed_probe:
 	dev_dbg(&intf->dev, "interfaces are valid\n");
-	for (minor = 0; minor < ACM_TTY_MINORS && acm_table[minor]; minor++);
-
-	if (minor == ACM_TTY_MINORS) {
-		dev_err(&intf->dev, "no more free acm devices\n");
-		return -ENODEV;
-	}
 
 	acm = kzalloc(sizeof(struct acm), GFP_KERNEL);
 	if (acm == NULL) {
@@ -1068,11 +1065,18 @@ made_compressed_probe:
 		goto alloc_fail;
 	}
 
-	ctrlsize = le16_to_cpu(epctrl->wMaxPacketSize);
-	readsize = le16_to_cpu(epread->wMaxPacketSize) *
+	minor = acm_alloc_minor(acm);
+	if (minor == ACM_TTY_MINORS) {
+		dev_err(&intf->dev, "no more free acm devices\n");
+		kfree(acm);
+		return -ENODEV;
+	}
+
+	ctrlsize = usb_endpoint_maxp(epctrl);
+	readsize = usb_endpoint_maxp(epread) *
 				(quirks == SINGLE_RX_URB ? 1 : 2);
 	acm->combined_interfaces = combined_interfaces;
-	acm->writesize = le16_to_cpu(epwrite->wMaxPacketSize) * 20;
+	acm->writesize = usb_endpoint_maxp(epwrite) * 20;
 	acm->control = control_interface;
 	acm->data = data_interface;
 	acm->minor = minor;
@@ -1179,7 +1183,7 @@ made_compressed_probe:
 	if (i < 0)
 		goto alloc_fail7;
 
-	if (cfd) { /* export the country data */
+	if (cfd) { 
 		acm->country_codes = kmalloc(cfd->bLength - 4, GFP_KERNEL);
 		if (!acm->country_codes)
 			goto skip_countries;
@@ -1211,7 +1215,7 @@ skip_countries:
 	usb_fill_int_urb(acm->ctrlurb, usb_dev,
 			 usb_rcvintpipe(usb_dev, epctrl->bEndpointAddress),
 			 acm->ctrl_buffer, ctrlsize, acm_ctrl_irq, acm,
-			 /* works around buggy devices */
+			 
 			 epctrl->bInterval ? epctrl->bInterval : 0xff);
 	acm->ctrlurb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 	acm->ctrlurb->transfer_dma = acm->ctrl_dma;
@@ -1230,8 +1234,6 @@ skip_countries:
 	usb_get_intf(control_interface);
 	tty_register_device(acm_tty_driver, minor, &control_interface->dev);
 
-	acm_table[minor] = acm;
-
 	return 0;
 alloc_fail7:
 	for (i = 0; i < ACM_NW; i++)
@@ -1246,6 +1248,7 @@ alloc_fail5:
 alloc_fail4:
 	usb_free_coherent(usb_dev, ctrlsize, acm->ctrl_buffer, acm->ctrl_dma);
 alloc_fail2:
+	acm_release_minor(acm);
 	kfree(acm);
 alloc_fail:
 	return -ENOMEM;
@@ -1271,12 +1274,16 @@ static void acm_disconnect(struct usb_interface *intf)
 	struct acm *acm = usb_get_intfdata(intf);
 	struct usb_device *usb_dev = interface_to_usbdev(intf);
 	struct tty_struct *tty;
+	int i;
 
-	/* sibling interface is already cleaning up */
+	dev_dbg(&intf->dev, "%s\n", __func__);
+
+	
 	if (!acm)
 		return;
 
-	mutex_lock(&open_mutex);
+	mutex_lock(&acm->mutex);
+	acm->disconnected = true;
 	if (acm->country_codes) {
 		device_remove_file(&acm->control->dev,
 				&dev_attr_wCountryCodes);
@@ -1284,33 +1291,32 @@ static void acm_disconnect(struct usb_interface *intf)
 				&dev_attr_iCountryCodeRelDate);
 	}
 	device_remove_file(&acm->control->dev, &dev_attr_bmCapabilities);
-	acm->dev = NULL;
 	usb_set_intfdata(acm->control, NULL);
 	usb_set_intfdata(acm->data, NULL);
+	mutex_unlock(&acm->mutex);
+
+	tty = tty_port_tty_get(&acm->port);
+	if (tty) {
+		tty_vhangup(tty);
+		tty_kref_put(tty);
+	}
 
 	stop_data_traffic(acm);
 
+	usb_free_urb(acm->ctrlurb);
+	for (i = 0; i < ACM_NW; i++)
+		usb_free_urb(acm->wb[i].urb);
+	for (i = 0; i < acm->rx_buflimit; i++)
+		usb_free_urb(acm->read_urbs[i]);
 	acm_write_buffers_free(acm);
-	usb_free_coherent(usb_dev, acm->ctrlsize, acm->ctrl_buffer,
-			  acm->ctrl_dma);
+	usb_free_coherent(usb_dev, acm->ctrlsize, acm->ctrl_buffer, acm->ctrl_dma);
 	acm_read_buffers_free(acm);
 
 	if (!acm->combined_interfaces)
 		usb_driver_release_interface(&acm_driver, intf == acm->control ?
 					acm->data : acm->control);
 
-	if (acm->port.count == 0) {
-		acm_tty_unregister(acm);
-		mutex_unlock(&open_mutex);
-		return;
-	}
-
-	mutex_unlock(&open_mutex);
-	tty = tty_port_tty_get(&acm->port);
-	if (tty) {
-		tty_hangup(tty);
-		tty_kref_put(tty);
-	}
+	tty_port_put(&acm->port);
 }
 
 #ifdef CONFIG_PM
@@ -1319,7 +1325,7 @@ static int acm_suspend(struct usb_interface *intf, pm_message_t message)
 	struct acm *acm = usb_get_intfdata(intf);
 	int cnt;
 
-	if (message.event & PM_EVENT_AUTO) {
+	if (PMSG_IS_AUTO(message)) {
 		int b;
 
 		spin_lock_irq(&acm->write_lock);
@@ -1337,16 +1343,10 @@ static int acm_suspend(struct usb_interface *intf, pm_message_t message)
 
 	if (cnt)
 		return 0;
-	/*
-	we treat opened interfaces differently,
-	we must guard against open
-	*/
-	mutex_lock(&acm->mutex);
 
-	if (acm->port.count)
+	if (test_bit(ASYNCB_INITIALIZED, &acm->port.flags))
 		stop_data_traffic(acm);
 
-	mutex_unlock(&acm->mutex);
 	return 0;
 }
 
@@ -1365,8 +1365,7 @@ static int acm_resume(struct usb_interface *intf)
 	if (cnt)
 		return 0;
 
-	mutex_lock(&acm->mutex);
-	if (acm->port.count) {
+	if (test_bit(ASYNCB_INITIALIZED, &acm->port.flags)) {
 		rv = usb_submit_urb(acm->ctrlurb, GFP_NOIO);
 
 		spin_lock_irq(&acm->write_lock);
@@ -1379,10 +1378,6 @@ static int acm_resume(struct usb_interface *intf)
 			spin_unlock_irq(&acm->write_lock);
 		}
 
-		/*
-		 * delayed error checking because we must
-		 * do the write path at all cost
-		 */
 		if (rv < 0)
 			goto err_out;
 
@@ -1390,7 +1385,6 @@ static int acm_resume(struct usb_interface *intf)
 	}
 
 err_out:
-	mutex_unlock(&acm->mutex);
 	return rv;
 }
 
@@ -1399,19 +1393,18 @@ static int acm_reset_resume(struct usb_interface *intf)
 	struct acm *acm = usb_get_intfdata(intf);
 	struct tty_struct *tty;
 
-	mutex_lock(&acm->mutex);
-	if (acm->port.count) {
+	if (test_bit(ASYNCB_INITIALIZED, &acm->port.flags)) {
 		tty = tty_port_tty_get(&acm->port);
 		if (tty) {
 			tty_hangup(tty);
 			tty_kref_put(tty);
 		}
 	}
-	mutex_unlock(&acm->mutex);
+
 	return acm_resume(intf);
 }
 
-#endif /* CONFIG_PM */
+#endif 
 
 #define NOKIA_PCSUITE_ACM_INFO(x) \
 		USB_DEVICE_AND_INTERFACE_INFO(0x0421, x, \
@@ -1423,161 +1416,149 @@ static int acm_reset_resume(struct usb_interface *intf)
 		USB_CLASS_COMM, USB_CDC_SUBCLASS_ACM, \
 		USB_CDC_ACM_PROTO_VENDOR)
 
-/*
- * USB driver structure.
- */
 
 static const struct usb_device_id acm_ids[] = {
-	/* quirky and broken devices */
-	{ USB_DEVICE(0x0870, 0x0001), /* Metricom GS Modem */
-	.driver_info = NO_UNION_NORMAL, /* has no union descriptor */
+	
+	{ USB_DEVICE(0x0870, 0x0001), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x0e8d, 0x0003), /* FIREFLY, MediaTek Inc; andrey.arapov@gmail.com */
-	.driver_info = NO_UNION_NORMAL, /* has no union descriptor */
+	{ USB_DEVICE(0x0e8d, 0x0003), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x0e8d, 0x3329), /* MediaTek Inc GPS */
-	.driver_info = NO_UNION_NORMAL, /* has no union descriptor */
+	{ USB_DEVICE(0x0e8d, 0x3329), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x0482, 0x0203), /* KYOCERA AH-K3001V */
-	.driver_info = NO_UNION_NORMAL, /* has no union descriptor */
+	{ USB_DEVICE(0x0482, 0x0203), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x079b, 0x000f), /* BT On-Air USB MODEM */
-	.driver_info = NO_UNION_NORMAL, /* has no union descriptor */
+	{ USB_DEVICE(0x079b, 0x000f), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x0ace, 0x1602), /* ZyDAS 56K USB MODEM */
+	{ USB_DEVICE(0x0ace, 0x1602), 
 	.driver_info = SINGLE_RX_URB,
 	},
-	{ USB_DEVICE(0x0ace, 0x1608), /* ZyDAS 56K USB MODEM */
-	.driver_info = SINGLE_RX_URB, /* firmware bug */
+	{ USB_DEVICE(0x0ace, 0x1608), 
+	.driver_info = SINGLE_RX_URB, 
 	},
-	{ USB_DEVICE(0x0ace, 0x1611), /* ZyDAS 56K USB MODEM - new version */
-	.driver_info = SINGLE_RX_URB, /* firmware bug */
+	{ USB_DEVICE(0x0ace, 0x1611), 
+	.driver_info = SINGLE_RX_URB, 
 	},
-	{ USB_DEVICE(0x22b8, 0x7000), /* Motorola Q Phone */
-	.driver_info = NO_UNION_NORMAL, /* has no union descriptor */
+	{ USB_DEVICE(0x22b8, 0x7000), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x0803, 0x3095), /* Zoom Telephonics Model 3095F USB MODEM */
-	.driver_info = NO_UNION_NORMAL, /* has no union descriptor */
+	{ USB_DEVICE(0x0803, 0x3095), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x0572, 0x1321), /* Conexant USB MODEM CX93010 */
-	.driver_info = NO_UNION_NORMAL, /* has no union descriptor */
+	{ USB_DEVICE(0x0572, 0x1321), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x0572, 0x1324), /* Conexant USB MODEM RD02-D400 */
-	.driver_info = NO_UNION_NORMAL, /* has no union descriptor */
+	{ USB_DEVICE(0x0572, 0x1324), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x0572, 0x1328), /* Shiro / Aztech USB MODEM UM-3100 */
-	.driver_info = NO_UNION_NORMAL, /* has no union descriptor */
+	{ USB_DEVICE(0x0572, 0x1328), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x22b8, 0x6425), /* Motorola MOTOMAGX phones */
+	{ USB_DEVICE(0x22b8, 0x6425), 
 	},
-	/* Motorola H24 HSPA module: */
-	{ USB_DEVICE(0x22b8, 0x2d91) }, /* modem                                */
-	{ USB_DEVICE(0x22b8, 0x2d92) }, /* modem           + diagnostics        */
-	{ USB_DEVICE(0x22b8, 0x2d93) }, /* modem + AT port                      */
-	{ USB_DEVICE(0x22b8, 0x2d95) }, /* modem + AT port + diagnostics        */
-	{ USB_DEVICE(0x22b8, 0x2d96) }, /* modem                         + NMEA */
-	{ USB_DEVICE(0x22b8, 0x2d97) }, /* modem           + diagnostics + NMEA */
-	{ USB_DEVICE(0x22b8, 0x2d99) }, /* modem + AT port               + NMEA */
-	{ USB_DEVICE(0x22b8, 0x2d9a) }, /* modem + AT port + diagnostics + NMEA */
+	
+	{ USB_DEVICE(0x22b8, 0x2d91) }, 
+	{ USB_DEVICE(0x22b8, 0x2d92) }, 
+	{ USB_DEVICE(0x22b8, 0x2d93) }, 
+	{ USB_DEVICE(0x22b8, 0x2d95) }, 
+	{ USB_DEVICE(0x22b8, 0x2d96) }, 
+	{ USB_DEVICE(0x22b8, 0x2d97) }, 
+	{ USB_DEVICE(0x22b8, 0x2d99) }, 
+	{ USB_DEVICE(0x22b8, 0x2d9a) }, 
 
-	{ USB_DEVICE(0x0572, 0x1329), /* Hummingbird huc56s (Conexant) */
-	.driver_info = NO_UNION_NORMAL, /* union descriptor misplaced on
-					   data interface instead of
-					   communications interface.
-					   Maybe we should define a new
-					   quirk for this. */
+	{ USB_DEVICE(0x0572, 0x1329), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x1bbb, 0x0003), /* Alcatel OT-I650 */
-	.driver_info = NO_UNION_NORMAL, /* reports zero length descriptor */
+	{ USB_DEVICE(0x1bbb, 0x0003), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
-	{ USB_DEVICE(0x1576, 0x03b1), /* Maretron USB100 */
-	.driver_info = NO_UNION_NORMAL, /* reports zero length descriptor */
+	{ USB_DEVICE(0x1576, 0x03b1), 
+	.driver_info = NO_UNION_NORMAL, 
 	},
 
-	/* Nokia S60 phones expose two ACM channels. The first is
-	 * a modem and is picked up by the standard AT-command
-	 * information below. The second is 'vendor-specific' but
-	 * is treated as a serial device at the S60 end, so we want
-	 * to expose it on Linux too. */
-	{ NOKIA_PCSUITE_ACM_INFO(0x042D), }, /* Nokia 3250 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x04D8), }, /* Nokia 5500 Sport */
-	{ NOKIA_PCSUITE_ACM_INFO(0x04C9), }, /* Nokia E50 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0419), }, /* Nokia E60 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x044D), }, /* Nokia E61 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0001), }, /* Nokia E61i */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0475), }, /* Nokia E62 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0508), }, /* Nokia E65 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0418), }, /* Nokia E70 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0425), }, /* Nokia N71 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0486), }, /* Nokia N73 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x04DF), }, /* Nokia N75 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x000e), }, /* Nokia N77 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0445), }, /* Nokia N80 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x042F), }, /* Nokia N91 & N91 8GB */
-	{ NOKIA_PCSUITE_ACM_INFO(0x048E), }, /* Nokia N92 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0420), }, /* Nokia N93 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x04E6), }, /* Nokia N93i  */
-	{ NOKIA_PCSUITE_ACM_INFO(0x04B2), }, /* Nokia 5700 XpressMusic */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0134), }, /* Nokia 6110 Navigator (China) */
-	{ NOKIA_PCSUITE_ACM_INFO(0x046E), }, /* Nokia 6110 Navigator */
-	{ NOKIA_PCSUITE_ACM_INFO(0x002f), }, /* Nokia 6120 classic &  */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0088), }, /* Nokia 6121 classic */
-	{ NOKIA_PCSUITE_ACM_INFO(0x00fc), }, /* Nokia 6124 classic */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0042), }, /* Nokia E51 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x00b0), }, /* Nokia E66 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x00ab), }, /* Nokia E71 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0481), }, /* Nokia N76 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0007), }, /* Nokia N81 & N81 8GB */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0071), }, /* Nokia N82 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x04F0), }, /* Nokia N95 & N95-3 NAM */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0070), }, /* Nokia N95 8GB  */
-	{ NOKIA_PCSUITE_ACM_INFO(0x00e9), }, /* Nokia 5320 XpressMusic */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0099), }, /* Nokia 6210 Navigator, RM-367 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0128), }, /* Nokia 6210 Navigator, RM-419 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x008f), }, /* Nokia 6220 Classic */
-	{ NOKIA_PCSUITE_ACM_INFO(0x00a0), }, /* Nokia 6650 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x007b), }, /* Nokia N78 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0094), }, /* Nokia N85 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x003a), }, /* Nokia N96 & N96-3  */
-	{ NOKIA_PCSUITE_ACM_INFO(0x00e9), }, /* Nokia 5320 XpressMusic */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0108), }, /* Nokia 5320 XpressMusic 2G */
-	{ NOKIA_PCSUITE_ACM_INFO(0x01f5), }, /* Nokia N97, RM-505 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x02e3), }, /* Nokia 5230, RM-588 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0178), }, /* Nokia E63 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x010e), }, /* Nokia E75 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x02d9), }, /* Nokia 6760 Slide */
-	{ NOKIA_PCSUITE_ACM_INFO(0x01d0), }, /* Nokia E52 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0223), }, /* Nokia E72 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0275), }, /* Nokia X6 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x026c), }, /* Nokia N97 Mini */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0154), }, /* Nokia 5800 XpressMusic */
-	{ NOKIA_PCSUITE_ACM_INFO(0x04ce), }, /* Nokia E90 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x01d4), }, /* Nokia E55 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0302), }, /* Nokia N8 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x0335), }, /* Nokia E7 */
-	{ NOKIA_PCSUITE_ACM_INFO(0x03cd), }, /* Nokia C7 */
-	{ SAMSUNG_PCSUITE_ACM_INFO(0x6651), }, /* Samsung GTi8510 (INNOV8) */
+	{ NOKIA_PCSUITE_ACM_INFO(0x042D), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x04D8), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x04C9), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0419), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x044D), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0001), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0475), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0508), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0418), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0425), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0486), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x04DF), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x000e), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0445), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x042F), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x048E), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0420), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x04E6), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x04B2), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0134), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x046E), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x002f), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0088), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x00fc), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0042), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x00b0), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x00ab), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0481), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0007), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0071), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x04F0), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0070), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x00e9), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0099), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0128), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x008f), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x00a0), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x007b), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0094), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x003a), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x00e9), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0108), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x01f5), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x02e3), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0178), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x010e), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x02d9), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x01d0), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0223), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0275), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x026c), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0154), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x04ce), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x01d4), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0302), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x0335), }, 
+	{ NOKIA_PCSUITE_ACM_INFO(0x03cd), }, 
+	{ SAMSUNG_PCSUITE_ACM_INFO(0x6651), }, 
 
-	/* Support for Owen devices */
-	{ USB_DEVICE(0x03eb, 0x0030), }, /* Owen SI30 */
+	
+	{ USB_DEVICE(0x03eb, 0x0030), }, 
 
-	/* NOTE: non-Nokia COMM/ACM/0xff is likely MSFT RNDIS... NOT a modem! */
+	
 
-	/* Support Lego NXT using pbLua firmware */
+	
 	{ USB_DEVICE(0x0694, 0xff00),
 	.driver_info = NOT_A_MODEM,
 	},
 
-	/* Support for Droids MuIn LCD */
+	
 	{ USB_DEVICE(0x04d8, 0x000b),
 	.driver_info = NO_DATA_INTERFACE,
 	},
 
-	/* control interfaces without any protocol set */
+	
 	{ USB_INTERFACE_INFO(USB_CLASS_COMM, USB_CDC_SUBCLASS_ACM,
 		USB_CDC_PROTO_NONE) },
 
-	/* control interfaces with various AT-command sets */
+	
 	{ USB_INTERFACE_INFO(USB_CLASS_COMM, USB_CDC_SUBCLASS_ACM,
 		USB_CDC_ACM_PROTO_AT_V25TER) },
 	{ USB_INTERFACE_INFO(USB_CLASS_COMM, USB_CDC_SUBCLASS_ACM,
@@ -1611,13 +1592,12 @@ static struct usb_driver acm_driver = {
 #endif
 };
 
-/*
- * TTY driver structures.
- */
 
 static const struct tty_operations acm_ops = {
+	.install =		acm_tty_install,
 	.open =			acm_tty_open,
 	.close =		acm_tty_close,
+	.cleanup =		acm_tty_cleanup,
 	.hangup =		acm_tty_hangup,
 	.write =		acm_tty_write,
 	.write_room =		acm_tty_write_room,
@@ -1631,9 +1611,6 @@ static const struct tty_operations acm_ops = {
 	.tiocmset =		acm_tty_tiocmset,
 };
 
-/*
- * Init / exit.
- */
 
 static int __init acm_init(void)
 {
@@ -1641,7 +1618,6 @@ static int __init acm_init(void)
 	acm_tty_driver = alloc_tty_driver(ACM_TTY_MINORS);
 	if (!acm_tty_driver)
 		return -ENOMEM;
-	acm_tty_driver->owner = THIS_MODULE,
 	acm_tty_driver->driver_name = "acm",
 	acm_tty_driver->name = "ttyACM",
 	acm_tty_driver->major = ACM_TTY_MAJOR,

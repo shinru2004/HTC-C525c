@@ -28,48 +28,47 @@
 static struct rfkill *bt_rfk;
 static const char bt_name[] = "bcm4334";
 
-/* bt on configuration */
 static uint32_t k2_cl_bt_on_table[] = {
 
-	/* BT_RTS */
+	
 	GPIO_CFG(MSM_BT_UART_RTSz,
 				2,
 				GPIO_CFG_OUTPUT,
 				GPIO_CFG_NO_PULL,
 				GPIO_CFG_2MA),
-	/* BT_CTS */
+	
 	GPIO_CFG(MSM_BT_UART_CTSz,
 				2,
 				GPIO_CFG_INPUT,
 				GPIO_CFG_PULL_UP,
 				GPIO_CFG_2MA),
-	/* BT_RX */
+	
 	GPIO_CFG(MSM_BT_UART_RX,
 				2,
 				GPIO_CFG_INPUT,
 				GPIO_CFG_PULL_UP,
 				GPIO_CFG_2MA),
-	/* BT_TX */
+	
 	GPIO_CFG(MSM_BT_UART_TX,
 				2,
 				GPIO_CFG_OUTPUT,
 				GPIO_CFG_NO_PULL,
 				GPIO_CFG_2MA),
 
-	/* BT_HOST_WAKE */
+	
 	GPIO_CFG(MSM_BT_HOST_WAKE,
 				0,
 				GPIO_CFG_INPUT,
 				GPIO_CFG_NO_PULL,
 				GPIO_CFG_2MA),
-	/* BT_DEV_WAKE */
+	
 	GPIO_CFG(MSM_BT_DEV_WAKE,
 				0,
 				GPIO_CFG_OUTPUT,
 				GPIO_CFG_NO_PULL,
 				GPIO_CFG_2MA),
 
-	/* BT_REG_ON */
+	
 	GPIO_CFG(MSM_BT_REG_ON,
 				0,
 				GPIO_CFG_OUTPUT,
@@ -77,48 +76,47 @@ static uint32_t k2_cl_bt_on_table[] = {
 				GPIO_CFG_2MA),
 };
 
-/* bt off configuration */
 static uint32_t k2_cl_bt_off_table[] = {
 
-	/* BT_RTS */
+	
 	GPIO_CFG(MSM_BT_UART_RTSz,
 				0,
 				GPIO_CFG_OUTPUT,
 				GPIO_CFG_NO_PULL,
 				GPIO_CFG_2MA),
-	/* BT_CTS */
+	
 	GPIO_CFG(MSM_BT_UART_CTSz,
 				0,
 				GPIO_CFG_INPUT,
 				GPIO_CFG_PULL_DOWN,
 				GPIO_CFG_2MA),
-	/* BT_RX */
+	
 	GPIO_CFG(MSM_BT_UART_RX,
 				0,
 				GPIO_CFG_INPUT,
 				GPIO_CFG_PULL_DOWN,
 				GPIO_CFG_2MA),
-	/* BT_TX */
+	
 	GPIO_CFG(MSM_BT_UART_TX,
 				0,
 				GPIO_CFG_OUTPUT,
 				GPIO_CFG_NO_PULL,
 				GPIO_CFG_2MA),
 
-	/* BT_REG_ON */
+	
 	GPIO_CFG(MSM_BT_REG_ON,
 				0,
 				GPIO_CFG_OUTPUT,
 				GPIO_CFG_NO_PULL,
 				GPIO_CFG_2MA),
 
-	/* BT_HOST_WAKE */
+	
 	GPIO_CFG(MSM_BT_HOST_WAKE,
 				0,
 				GPIO_CFG_INPUT,
 				GPIO_CFG_PULL_DOWN,
 				GPIO_CFG_2MA),
-	/* BT_DEV_WAKE */
+	
 	GPIO_CFG(MSM_BT_DEV_WAKE,
 				0,
 				GPIO_CFG_OUTPUT,
@@ -146,7 +144,7 @@ static void k2_cl_config_bt_on(void)
 	htc_wifi_bt_sleep_clk_ctl(CLK_ON, ID_BT);
 	mdelay(2);
 
-	/* set bt on configuration*/
+	
 	config_bt_table(k2_cl_bt_on_table,
 				ARRAY_SIZE(k2_cl_bt_on_table));
 	mdelay(2);
@@ -163,7 +161,7 @@ static void k2_cl_config_bt_off(void)
 	gpio_set_value(MSM_BT_REG_ON, 0);
 	mdelay(2);
 
-	/* set bt off configuration*/
+	
 	config_bt_table(k2_cl_bt_off_table,
 				ARRAY_SIZE(k2_cl_bt_off_table));
 	mdelay(2);
@@ -198,11 +196,11 @@ static struct rfkill_ops k2_cl_rfkill_ops = {
 static int k2_cl_rfkill_probe(struct platform_device *pdev)
 {
 	int rc = 0;
-	bool default_state = true;  /* off */
+	bool default_state = true;  
 
-	/* Sleep clock always on */
-	/* htc_wifi_bt_sleep_clk_ctl(CLK_ON, ID_BT); */
-	//mdelay(2);
+	
+	
+	
 
 	bluetooth_set_power(NULL, default_state);
 
@@ -215,7 +213,7 @@ static int k2_cl_rfkill_probe(struct platform_device *pdev)
 
 	rfkill_set_states(bt_rfk, default_state, false);
 
-	/* userspace cannot take exclusive control */
+	
 
 	rc = rfkill_register(bt_rfk);
 	if (rc)

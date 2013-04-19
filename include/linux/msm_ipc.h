@@ -22,11 +22,8 @@ struct msm_ipc_addr {
 	} addr;
 };
 
-#define MSM_IPC_WAIT_FOREVER	(~0)  /* timeout for permanent subscription */
+#define MSM_IPC_WAIT_FOREVER	(~0)  
 
-/*
- * Socket API
- */
 
 #ifndef AF_MSM_IPC
 #define AF_MSM_IPC		27
@@ -62,6 +59,8 @@ struct sockaddr_msm_ipc {
 #define IPC_ROUTER_IOCTL_BIND_CONTROL_PORT \
 	_IOR(IPC_ROUTER_IOCTL_MAGIC, 4, unsigned int)
 
+#ifdef CONFIG_MSM8960_ONLY
+
 struct server_lookup_args {
 	struct msm_ipc_port_name port_name;
 	int num_entries_in_array;
@@ -69,5 +68,23 @@ struct server_lookup_args {
 	uint32_t lookup_mask;
 	struct msm_ipc_port_addr port_addr[0];
 };
+#else
+
+struct msm_ipc_server_info {
+	uint32_t node_id;
+	uint32_t port_id;
+	uint32_t service;
+	uint32_t instance;
+};
+
+struct server_lookup_args {
+	struct msm_ipc_port_name port_name;
+	int num_entries_in_array;
+	int num_entries_found;
+	uint32_t lookup_mask;
+	struct msm_ipc_server_info srv_info[0];
+};
+
+#endif 
 
 #endif

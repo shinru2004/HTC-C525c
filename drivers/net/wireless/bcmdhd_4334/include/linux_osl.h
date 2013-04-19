@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: linux_osl.h 325514 2012-04-03 17:18:09Z $
+ * $Id: linux_osl.h 326751 2012-04-10 20:13:19Z $
  */
 
 #ifndef _linux_osl_h_
@@ -155,7 +155,6 @@ extern void osl_dma_unmap(osl_t *osh, uint pa, uint size, int direction);
 	#define SELECT_BUS_READ(osh, mmap_op, bus_op) (((osl_pubinfo_t*)(osh))->mmbus) ? \
 		mmap_op : bus_op
 
-/* HTC_CSP_START */
 #ifndef errprintf
 #define	errprintf(fmt, args...)	printk(KERN_WARNING "[WLAN][ERR] "fmt, ## args)
 #endif
@@ -169,7 +168,6 @@ extern void osl_dma_unmap(osl_t *osh, uint pa, uint size, int direction);
 #endif
 
 #define HTC_KERNEL_FEEDBACK(x) errprintf x
-/* HTC_CSP_END */
 #define OSL_ERROR(bcmerror)	osl_error(bcmerror)
 extern int osl_error(int bcmerror);
 
@@ -300,8 +298,8 @@ typedef struct ctfpool {
 	uint 		slow_allocs;
 } ctfpool_t;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
-#define	FASTBUF	(1 << 4)
-#define	CTFBUF	(1 << 5)
+#define	FASTBUF	(1 << 16)
+#define	CTFBUF	(1 << 17)
 #define	PKTSETFAST(osh, skb)	((((struct sk_buff*)(skb))->mac_len) |= FASTBUF)
 #define	PKTCLRFAST(osh, skb)	((((struct sk_buff*)(skb))->mac_len) &= (~FASTBUF))
 #define	PKTSETCTF(osh, skb)	((((struct sk_buff*)(skb))->mac_len) |= CTFBUF)
@@ -334,7 +332,7 @@ extern void osl_ctfpool_stats(osl_t *osh, void *b);
 
 #ifdef HNDCTF
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
-#define	SKIPCT	(1 << 6)
+#define	SKIPCT	(1 << 18)
 #define	PKTSETSKIPCT(osh, skb)	(((struct sk_buff*)(skb))->mac_len |= SKIPCT)
 #define	PKTCLRSKIPCT(osh, skb)	(((struct sk_buff*)(skb))->mac_len &= (~SKIPCT))
 #define	PKTSKIPCT(osh, skb)	(((struct sk_buff*)(skb))->mac_len & SKIPCT)

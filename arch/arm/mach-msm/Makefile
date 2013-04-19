@@ -1,4 +1,6 @@
-obj-y += io.o dma.o memory.o
+CFLAGS_scm.o :=$(call as-instr,.arch_extension sec,-DREQUIRES_SEC=1)
+
+obj-y += io.o dma.o memory.o emmc_partitions.o
 ifndef CONFIG_ARM_ARCH_TIMER
 obj-y += timer.o
 endif
@@ -24,7 +26,8 @@ obj-y += acpuclock.o
 obj-y += radio_feedback.o
 obj-$(CONFIG_ARCH_MSM7X27) += acpuclock-7627.o clock-pll.o
 obj-$(CONFIG_ARCH_MSM_SCORPION) += pmu.o
-obj-$(CONFIG_ARCH_MSM_KRAIT) += msm-krait-l2-accessors.o pmu.o
+obj-$(CONFIG_ARCH_MSM_SCORPIONMP) += perf_event_msm_l2.o
+obj-$(CONFIG_ARCH_MSM_KRAIT) += msm-krait-l2-accessors.o pmu.o perf_event_msm_krait_l2.o
 obj-$(CONFIG_ARCH_MSM_KRAIT) += krait-scm.o
 obj-$(CONFIG_ARCH_MSM7X27A) += pmu.o
 
@@ -54,9 +57,12 @@ obj-$(CONFIG_MSM_JTAG) += jtag.o
 
 msm-etm-objs := etm.o
 obj-$(CONFIG_MSM_ETM) += msm-etm.o
-obj-$(CONFIG_MSM_QDSS) += qdss.o qdss-etb.o qdss-tpiu.o qdss-funnel.o qdss-etm.o
 
+ifdef CONFIG_MSM_NONSMD_PACKET_FILTER
+obj-$(CONFIG_MSM_SMD) += htc_port_list_lte.o
+else
 obj-$(CONFIG_MSM_SMD) += htc_port_list.o
+endif
 
 quiet_cmd_mkrpcsym = MKCAP   $@
       cmd_mkrpcsym = $(PERL) $(srctree)/$(src)/mkrpcsym.pl $< $@
@@ -65,7 +71,7 @@ target += smd_rpc_sym.c
 $(obj)/smd_rpc_sym.c: $(src)/smd_rpc_sym $(src)/mkrpcsym.pl
 	$(call if_changed,mkrpcsym)
 
-obj-$(CONFIG_MSM_SCM) += scm.o scm-boot.o htc_debug.o htc_simlock.o htc_sdservice.o htc_drm.o
+obj-$(CONFIG_MSM_SCM) += scm.o scm-boot.o htc_simlock.o htc_sdservice.o htc_drm.o htc_debug.o htc_rmtmsg.o
 obj-$(CONFIG_MSM_SECURE_IO) += scm-io.o
 obj-$(CONFIG_MSM_PIL) += peripheral-loader.o
 obj-$(CONFIG_MSM_PIL) += scm-pas.o
@@ -81,6 +87,7 @@ obj-$(CONFIG_MSM_PIL_MODEM) += pil-modem.o
 obj-$(CONFIG_MSM_PIL_DSPS) += pil-dsps.o
 obj-$(CONFIG_MSM_PIL_GSS) += pil-gss.o
 obj-$(CONFIG_MSM_PIL_PRONTO) += pil-pronto.o
+obj-$(CONFIG_MSM_PIL_VENUS) += pil-venus.o
 obj-$(CONFIG_ARCH_QSD8X50) += sirc.o
 obj-$(CONFIG_ARCH_FSM9XXX) += sirc-fsm9xxx.o
 obj-$(CONFIG_MSM_FIQ_SUPPORT) += fiq_glue.o
@@ -97,24 +104,14 @@ obj-$(CONFIG_MSM_IPC_LOGGING) += ipc_logging_debug.o
 endif
 obj-$(CONFIG_MSM_SMD) += smd.o smd_debug.o remote_spinlock.o smd_private.o
 obj-y += socinfo.o
+obj-y += htc_sysinfo.o
 ifndef CONFIG_ARCH_MSM9615
 ifndef CONFIG_ARCH_APQ8064
 ifndef CONFIG_ARCH_MSM8960
 ifndef CONFIG_ARCH_MSM8X60
-ifndef CONFIG_ARCH_MSMCOPPER
+ifndef CONFIG_ARCH_MSM8974
 	obj-$(CONFIG_MSM_SMD) += pmic.o
 	obj-$(CONFIG_MSM_ONCRPCROUTER) += rpc_hsusb.o rpc_pmapp.o rpc_fsusb.o
-endif
-endif
-endif
-endif
-endif
-ifndef CONFIG_ARCH_MSM8960
-ifndef CONFIG_ARCH_MSM8X60
-ifndef CONFIG_ARCH_APQ8064
-ifndef CONFIG_ARCH_MSMCOPPER
-ifndef CONFIG_ARCH_MSM9625
-	obj-y += nand_partitions.o
 endif
 endif
 endif
@@ -157,6 +154,7 @@ obj-$(CONFIG_MSM_RPCSERVER_HANDSET) += rpc_server_handset.o
 obj-$(CONFIG_MSM_QDSP6) += qdsp6/
 obj-$(CONFIG_MSM8X60_AUDIO) += qdsp6v2/
 obj-$(CONFIG_MSM_AUDIO_QDSP6) += qdsp6v2/
+obj-$(CONFIG_MSM_AUDIO_QDSP6V2) += qdsp6v2/
 obj-$(CONFIG_MSM_HW3D) += hw3d.o
 obj-$(CONFIG_PM) += pm-boot.o
 obj-$(CONFIG_MSM_PM8X60) += pm-8x60.o pm-data.o
@@ -184,10 +182,8 @@ obj-$(CONFIG_ARCH_MSM8X60) += devices-msm8x60.o clock-local.o clock-8x60.o acpuc
 obj-$(CONFIG_ARCH_MSM8X60) += clock-rpm.o
 obj-$(CONFIG_ARCH_MSM8X60) += saw-regulator.o
 obj-$(CONFIG_ARCH_MSM8X60) += footswitch-8x60.o
-
-ifdef CONFIG_ARCH_MSM8930
-	obj-y += emmc_partitions.o
-endif
+obj-$(CONFIG_ARCH_MSM8960) += htc_acoustic_8960.o
+obj-$(CONFIG_MSM8X60_AUDIO) += htc_acoustic_8x60.o
 
 ifdef CONFIG_MSM_RPM_REGULATOR
 obj-y += rpm-regulator.o
@@ -202,7 +198,13 @@ obj-$(CONFIG_MSM_RPM_REGULATOR_SMD) += rpm-regulator-smd.o
 
 ifdef CONFIG_MSM_SUBSYSTEM_RESTART
 	obj-y += subsystem_notif.o
+ifdef CONFIG_MSM8960_ONLY
+	obj-y += subsystem_restart-8960.o
+else ifdef CONFIG_MSM8930_ONLY
+	obj-y += subsystem_restart-8960.o
+else
 	obj-y += subsystem_restart.o
+endif
 	obj-y += ramdump.o
 	obj-$(CONFIG_ARCH_MSM8X60) += modem-8660.o lpass-8660.o
 endif
@@ -217,19 +219,25 @@ ifdef CONFIG_CPU_IDLE
 	obj-$(CONFIG_ARCH_MSM8960) += cpuidle.o
 	obj-$(CONFIG_ARCH_MSM8X60) += cpuidle.o
 	obj-$(CONFIG_ARCH_MSM9615) += cpuidle.o
-	obj-$(CONFIG_ARCH_MSMCOPPER) += cpuidle.o
+	obj-$(CONFIG_ARCH_MSM8974) += cpuidle.o
 endif
 
-ifdef CONFIG_MSM_CAMERA_V4L2
-	obj-$(CONFIG_ARCH_MSM8X60) += board-msm8x60-camera.o
+ifdef CONFIG_BT
+	obj-$(CONFIG_MACH_MONARUDO) += board-monarudo-rfkill.o  htc_bdaddress.o
 endif
+
+#ifdef CONFIG_MSM_CAMERA_V4L2
+#	obj-$(CONFIG_ARCH_MSM8X60) += board-msm8x60-camera.o
+#endif
 obj-$(CONFIG_ARCH_FSM9XXX) += devices-fsm9xxx.o
 obj-$(CONFIG_ARCH_FSM9XXX) += clock-fsm9xxx.o clock-local.o acpuclock-fsm9xxx.o
 obj-$(CONFIG_ARCH_FSM9XXX) += dfe-fsm9xxx.o rfic-fsm9xxx.o
 obj-$(CONFIG_ARCH_FSM9XXX) += restart-fsm9xxx.o xo-fsm9xxx.o
 
 obj-$(CONFIG_MSM_WATCHDOG) += msm_watchdog.o
+obj-$(CONFIG_MSM_WATCHDOG) += htc_watchdog_monitor.o
 obj-$(CONFIG_MSM_WATCHDOG) += msm_watchdog_asm.o
+obj-$(CONFIG_MSM_WATCHDOG_V2) += msm_watchdog_v2.o
 obj-$(CONFIG_MACH_MSM8X60_RUMI3) += board-msm8x60.o
 obj-$(CONFIG_MACH_MSM8X60_SIM) += board-msm8x60.o
 obj-$(CONFIG_MACH_MSM8X60_SURF) += board-msm8x60.o
@@ -253,11 +261,13 @@ obj-$(CONFIG_MACH_MSM7X27A_FFA) += board-msm7x27a.o board-7627a-all.o
 obj-$(CONFIG_MACH_MSM7627A_QRD1) += board-qrd7627a.o board-7627a-all.o
 obj-$(CONFIG_MACH_MSM7627A_QRD3) += board-qrd7627a.o board-7627a-all.o
 obj-$(CONFIG_MACH_MSM7627A_EVB) += board-qrd7627a.o board-7627a-all.o
-obj-$(CONFIG_ARCH_MSM8625) += devices-msm7x27a.o clock-pcom-lookup.o mpm-8625.o
+obj-$(CONFIG_ARCH_MSM8625) += msm_smem_iface.o devices-msm7x27a.o clock-pcom-lookup.o mpm-8625.o
 obj-$(CONFIG_MACH_MSM8625_RUMI3) += board-msm7x27a.o
 obj-$(CONFIG_MACH_MSM8625_SURF) +=  board-msm7x27a.o board-7627a-all.o
 obj-$(CONFIG_MACH_MSM8625_EVB) +=  board-qrd7627a.o board-7627a-all.o
 obj-$(CONFIG_MACH_MSM8625_QRD7) +=  board-qrd7627a.o board-7627a-all.o
+obj-$(CONFIG_MACH_MSM8625_FFA) += board-msm7x27a.o board-7627a-all.o
+obj-$(CONFIG_MACH_MSM8625_EVT) += board-msm7x27a.o board-7627a-all.o
 obj-$(CONFIG_ARCH_MSM7X30) += board-msm7x30.o devices-msm7x30.o memory_topology.o
 obj-$(CONFIG_ARCH_MSM7X30) += clock-local.o clock-7x30.o acpuclock-7x30.o clock-pll.o
 obj-$(CONFIG_MACH_MSM7X25_SURF) += board-msm7x27.o devices-msm7x25.o
@@ -267,19 +277,22 @@ obj-$(CONFIG_ARCH_MSM8960) += footswitch-8x60.o
 obj-$(CONFIG_ARCH_MSM8960) += acpuclock-8960.o
 obj-$(CONFIG_ARCH_MSM8960) += memory_topology.o
 obj-$(CONFIG_ARCH_MSM8960) += saw-regulator.o
-obj-$(CONFIG_ARCH_MSM8960) += devices-8960.o
-obj-$(CONFIG_ARCH_APQ8064) += devices-8960.o devices-8064.o
-obj-$(CONFIG_ARCH_MSM8930) += devices_htc.o htc_awb_cal.o
+obj-$(CONFIG_ARCH_MSM8960) += devices-8960.o htc_wifi_nvs.o devices_htc.o htc_awb_cal.o
+obj-$(CONFIG_ARCH_MSM8930) += devices-8960.o htc_wifi_nvs.o devices_htc.o htc_awb_cal.o
+obj-$(CONFIG_ARCH_APQ8064) += devices-8960.o devices-8064.o devices_htc.o htc_awb_cal.o
 board-8960-all-objs += board-8960.o board-8960-camera.o board-8960-display.o board-8960-pmic.o board-8960-storage.o board-8960-gpiomux.o
-board-8930-all-objs += board-8930-display.o board-8930-pmic.o board-8930-storage.o board-8930-gpiomux.o devices-8930.o board-8930-gpu.o
-board-k2_cl-all-objs += board-k2_cl-pmic.o board-k2_cl-storage.o board-k2_cl-gpiomux.o devices-8930.o
-board-k2_plc_cl-all-objs += board-k2_plc_cl-pmic.o board-k2_plc_cl-storage.o board-k2_plc_cl-gpiomux.o devices-8930.o
-board-k2_ul-all-objs += board-k2_ul-pmic.o board-k2_ul-storage.o board-k2_ul-gpiomux.o devices-8930.o
-board-k2_u-all-objs += board-k2_u-pmic.o board-k2_u-storage.o board-k2_u-gpiomux.o devices-8930.o
-board-tc2-all-objs +=  board-tc2-pmic.o board-tc2-storage.o board-tc2-gpiomux.o devices-8930.o
-board-operaul-all-objs +=  board-operaul-pmic.o board-operaul-storage.o board-operaul-gpiomux.o devices-8930.o
-
+board-8930-all-objs += board-8930.o board-8930-camera.o board-8930-display.o board-8930-pmic.o board-8930-storage.o board-8930-gpiomux.o devices-8930.o board-8930-gpu.o
 board-8064-all-objs += board-8064.o board-8064-pmic.o board-8064-storage.o board-8064-gpiomux.o board-8064-camera.o board-8064-display.o board-8064-gpu.o
+board-elite-all-objs += board-elite.o board-elite-gpiomux.o devices-8960.o board-8960-storage.o
+board-k2_ul-all-objs +=  board-k2_ul-pmic.o board-k2_ul-storage.o board-k2_ul-gpiomux.o devices-8930.o
+# board-monarudo-all-objs += board-monarudo.o board-monarudo-pmic.o board-monarudo-storage.o board-monarudo-gpiomux.o board-monarudo-display.o board-monarudo-gpu.o board-monarudo-keypad.o board-monarudo-wifi.o
+board-monarudo-all-objs += board-monarudo.o board-monarudo-pmic.o board-monarudo-storage.o board-monarudo-gpiomux.o board-monarudo-display.o board-monarudo-gpu.o board-monarudo-keypad.o board-monarudo-wifi.o  board-monarudo-audio.o
+ifdef CONFIG_FB_MSM
+board-k2_ul-all-objs += board-k2-display.o board-k2-gpu.o
+endif
+ifdef CONFIG_MSM_CAMERA
+board-monarudo-all-objs += board-monarudo-camera.o
+endif
 obj-$(CONFIG_MACH_MSM8960_SIM) += board-8960-all.o board-8960-regulator.o
 obj-$(CONFIG_MACH_MSM8960_RUMI3) += board-8960-all.o board-8960-regulator.o
 obj-$(CONFIG_MACH_MSM8960_CDP) += board-8960-all.o board-8960-regulator.o
@@ -288,7 +301,7 @@ obj-$(CONFIG_MACH_MSM8960_FLUID) += board-8960-all.o board-8960-regulator.o
 obj-$(CONFIG_MACH_MSM8930_CDP) += board-8930-all.o board-8930-regulator.o
 obj-$(CONFIG_MACH_MSM8930_MTP) += board-8930-all.o board-8930-regulator.o
 obj-$(CONFIG_MACH_MSM8930_FLUID) += board-8930-all.o board-8930-regulator.o
-obj-$(CONFIG_PM8921_BMS) += bms-batterydata.o
+obj-$(CONFIG_PM8921_BMS) += bms-batterydata.o bms-batterydata-desay.o
 obj-$(CONFIG_MACH_APQ8064_SIM) += board-8064-all.o board-8064-regulator.o
 obj-$(CONFIG_MACH_APQ8064_RUMI3) += board-8064-all.o board-8064-regulator.o
 obj-$(CONFIG_MACH_APQ8064_CDP) += board-8064-all.o board-8064-regulator.o
@@ -296,27 +309,76 @@ obj-$(CONFIG_MACH_APQ8064_MTP) += board-8064-all.o board-8064-regulator.o
 obj-$(CONFIG_MACH_APQ8064_LIQUID) += board-8064-all.o board-8064-regulator.o
 obj-$(CONFIG_MACH_MPQ8064_HRD) += board-8064-all.o board-8064-regulator.o
 obj-$(CONFIG_MACH_MPQ8064_DTV) += board-8064-all.o board-8064-regulator.o
+obj-$(CONFIG_MACH_MONARUDO) += board-monarudo-all.o board-monarudo-regulator.o
+
+obj-$(CONFIG_MACH_MONARUDO) += htc_util.o
+obj-$(CONFIG_MACH_ELITE) += board-elite.o board-elite-regulator.o board-elite-gpiomux.o board-elite-storage.o board-elite-audio.o board-elite-camera.o
+obj-$(CONFIG_MACH_ELITE) += board-elite-keypad.o
+obj-$(CONFIG_MACH_ELITE) += htc_bdaddress.o
+obj-$(CONFIG_MACH_ELITE) += htc_util.o
+obj-$(CONFIG_MACH_VILLE) += board-ville.o board-ville-regulator.o board-ville-gpiomux.o board-ville-storage.o board-ville-audio.o board-ville-camera.o
+obj-$(CONFIG_MACH_VILLE) += board-ville-keypad.o
+obj-$(CONFIG_MACH_VILLE) += htc_bdaddress.o
+obj-$(CONFIG_MACH_VILLE) += htc_util.o
+obj-$(CONFIG_MACH_FIGHTER) += board-fighter.o board-fighter-regulator.o board-fighter-gpiomux.o board-fighter-storage.o board-fighter-audio.o board-fighter-camera.o
+obj-$(CONFIG_MACH_FIGHTER) += board-fighter-keypad.o
+obj-$(CONFIG_MACH_FIGHTER) += htc_bdaddress.o
+obj-$(CONFIG_MACH_FIGHTER) += htc_util.o
+obj-$(CONFIG_MACH_JET) += board-jet.o board-jet-regulator.o board-jet-gpiomux.o board-jet-storage.o board-jet-audio.o board-jet-camera.o
+obj-$(CONFIG_MACH_JET) += board-jet-keypad.o
+obj-$(CONFIG_MACH_JET) += htc_bdaddress.o
+obj-$(CONFIG_MACH_JET) += htc_util.o
+obj-$(CONFIG_MACH_VALENTE_WX) += board-valente_wx.o board-valente_wx-regulator.o board-valente_wx-gpiomux.o board-valente_wx-storage.o board-valente_wx-audio.o board-valente_wx-camera.o
+obj-$(CONFIG_MACH_VALENTE_WX) += board-valente_wx-keypad.o
+obj-$(CONFIG_MACH_VALENTE_WX) += htc_bdaddress.o
+obj-$(CONFIG_MACH_VALENTE_WX) += htc_util.o
+
+
+
+
+
+
+obj-$(CONFIG_MACH_K2_UL) += board-k2_ul.o board-k2_ul-all.o board-k2_ul-regulator.o board-k2_ul-audio.o
+obj-$(CONFIG_MACH_K2_UL) += htc_bdaddress.o board-k2_ul-rfkill.o htc_sleep_clk.o htc_util.o board-k2-camera.o
+#obj-$(CONFIG_MACH_K2_UL) += htc_acoustic.o
+obj-$(CONFIG_MACH_K2_UL) += board-k2_ul-keypad.o
+obj-$(CONFIG_MACH_K2_UL) += board-k2_ul-mmc.o board-k2_ul-wifi.o htc_wifi_nvs.o
+
 obj-$(CONFIG_ARCH_MSM9615) += board-9615.o devices-9615.o board-9615-regulator.o board-9615-gpiomux.o board-9615-storage.o board-9615-display.o
 obj-$(CONFIG_ARCH_MSM9615) += clock-local.o clock-9615.o acpuclock-9615.o clock-rpm.o clock-pll.o
-obj-$(CONFIG_ARCH_MSMCOPPER) += board-copper.o board-dt.o board-copper-regulator.o board-copper-gpiomux.o
-obj-$(CONFIG_ARCH_MSMCOPPER) += acpuclock-krait.o acpuclock-copper.o
-obj-$(CONFIG_ARCH_MSMCOPPER) += clock-local2.o clock-pll.o clock-copper.o
-obj-$(CONFIG_ARCH_MSMCOPPER) += gdsc.o
+obj-$(CONFIG_ARCH_MSM8974) += board-8974.o board-dt.o board-8974-regulator.o board-8974-gpiomux.o
+obj-$(CONFIG_ARCH_MSM8974) += acpuclock-krait.o acpuclock-8974.o
+obj-$(CONFIG_ARCH_MSM8974) += clock-local2.o clock-pll.o clock-8974.o clock-rpm.o clock-voter.o
+obj-$(CONFIG_ARCH_MSM8974) += gdsc.o
 obj-$(CONFIG_ARCH_MSM9625) += board-9625.o board-9625-gpiomux.o
+
+ifeq ($(CONFIG_WIMAX),y)
+obj-$(CONFIG_MACH_VALENTE_WX) += board-valente_wx-mmc.o  board-common-wimax.o
+endif
 
 obj-$(CONFIG_MACH_SAPPHIRE) += board-sapphire.o board-sapphire-gpio.o
 obj-$(CONFIG_MACH_SAPPHIRE) += board-sapphire-keypad.o board-sapphire-panel.o
 obj-$(CONFIG_MACH_SAPPHIRE) += board-sapphire-mmc.o board-sapphire-wifi.o
 obj-$(CONFIG_MACH_SAPPHIRE) += board-sapphire-rfkill.o msm_vibrator.o
 
+# Broadcom 
+
 CFLAGS_msm_vibrator.o += -Idrivers/staging/android
+CFLAGS_board-9615.o += -Idrivers/usb/gadget
 
 obj-$(CONFIG_ARCH_FSM9XXX) += board-fsm9xxx.o
 
 obj-$(CONFIG_TROUT_BATTCHG) += htc_battery.o
 obj-$(CONFIG_HTC_BATT_CORE) += htc_battery_core.o
+obj-$(CONFIG_HTC_BATT8x60) += htc_battery_8x60.o
 obj-$(CONFIG_HTC_BATT_8960) += htc_battery_8960.o htc_battery_cell.o
+
 obj-$(CONFIG_HTC_PWRSINK) += htc_pwrsink.o
+obj-$(CONFIG_HTC_HEADSET_MGR) += htc_headset_mgr.o
+obj-$(CONFIG_HTC_HEADSET_PMIC) += htc_headset_pmic.o
+obj-$(CONFIG_HTC_HEADSET_GPIO) += htc_headset_gpio.o
+obj-$(CONFIG_HTC_HEADSET_8X60) += htc_headset_8x60.o
+obj-$(CONFIG_HTC_HEADSET_ONE_WIRE) += htc_headset_one_wire.o
 obj-$(CONFIG_HTC_HEADSET) += htc_headset.o
 obj-$(CONFIG_MSM_RMT_STORAGE_CLIENT) += rmt_storage_client.o
 obj-$(CONFIG_MSM_SDIO_SMEM) += sdio_smem.o
@@ -328,25 +390,24 @@ ifdef CONFIG_MSM_RPM
 	obj-$(CONFIG_ARCH_MSM9615) += rpm_resources.o
 endif
 ifdef CONFIG_MSM_RPM_SMD
-	obj-$(CONFIG_ARCH_MSMCOPPER) += lpm_levels.o
+	obj-$(CONFIG_ARCH_MSM8974) += lpm_levels.o lpm_resources.o
 endif
 obj-$(CONFIG_MSM_MPM) += mpm.o
 obj-$(CONFIG_MSM_RPM_STATS_LOG) += rpm_stats.o
 obj-$(CONFIG_MSM_RPM_LOG) += rpm_log.o
 obj-$(CONFIG_MSM_TZ_LOG) += tz_log.o
+obj-$(CONFIG_MSM_8X60_TZ_LOG) += tz_log_8x60.o
 obj-$(CONFIG_MSM_XO) += msm_xo.o
 obj-$(CONFIG_MSM_BUS_SCALING) += msm_bus/
 obj-$(CONFIG_MSM_BUSPM_DEV) += msm-buspm-dev.o
 
-obj-$(CONFIG_MSM_IOMMU)	+= iommu.o iommu_dev.o devices-iommu.o iommu_domains.o
-ifdef CONFIG_OF
-obj-$(CONFIG_MSM_IOMMU)	+= iommu-v2.o iommu_dev-v2.o iommu_pagetable.o
-endif
+obj-$(CONFIG_MSM_IOMMU)		+= devices-iommu.o iommu_domains.o
 
 ifdef CONFIG_VCM
 obj-$(CONFIG_ARCH_MSM8X60) += board-msm8x60-vcm.o
 endif
-obj-$(CONFIG_MSM_OCMEM) += ocmem.o ocmem_allocator.o
+obj-$(CONFIG_MSM_OCMEM) += ocmem.o ocmem_allocator.o ocmem_notifier.o
+obj-$(CONFIG_MSM_OCMEM) += ocmem_sched.o ocmem_api.o
 
 obj-$(CONFIG_ARCH_MSM7X27) += gpiomux-7x27.o gpiomux-v1.o gpiomux.o
 obj-$(CONFIG_ARCH_MSM7X30) += gpiomux-7x30.o gpiomux-v1.o gpiomux.o
@@ -355,19 +416,9 @@ obj-$(CONFIG_ARCH_MSM8X60) += gpiomux-8x60.o gpiomux-v2.o gpiomux.o
 obj-$(CONFIG_ARCH_MSM8960) += gpiomux-v2.o gpiomux.o
 obj-$(CONFIG_ARCH_APQ8064) += gpiomux-v2.o gpiomux.o
 obj-$(CONFIG_ARCH_MSM9615) += gpiomux-v2.o gpiomux.o
-obj-$(CONFIG_ARCH_MSMCOPPER) += gpiomux-v2.o gpiomux.o
+obj-$(CONFIG_ARCH_MSM8974) += gpiomux-v2.o gpiomux.o
 obj-$(CONFIG_ARCH_MSM9625) += gpiomux-v2.o gpiomux.o
 
-
-ifdef CONFIG_FSM9XXX_TLMM
-obj-y   += gpio-fsm9xxx.o
-else
-ifdef CONFIG_MSM_V2_TLMM
-obj-y	+= gpio-v2.o
-else
-obj-y	+= gpio.o
-endif
-endif
 
 obj-$(CONFIG_MSM_SLEEP_STATS) += idle_stats.o
 obj-$(CONFIG_MSM_SLEEP_STATS_DEVICE) += idle_stats_device.o
@@ -377,7 +428,12 @@ obj-$(CONFIG_MSM_SHOW_RESUME_IRQ) += msm_show_resume_irq.o
 obj-$(CONFIG_BT_MSM_PINTEST)  += btpintest.o
 obj-$(CONFIG_MSM_FAKE_BATTERY) += fish_battery.o
 obj-$(CONFIG_MSM_RPC_VIBRATOR) += msm_vibrator.o
-obj-$(CONFIG_MSM_NATIVE_RESTART) += restart.o
+ifdef CONFIG_ARCH_APQ8064
+	obj-$(CONFIG_MSM_NATIVE_RESTART) += restart-apq8064.o
+else
+	obj-$(CONFIG_MSM_NATIVE_RESTART) += restart.o
+endif
+obj-$(CONFIG_MSM_NATIVE_RESTART) += htc_restart_handler.o
 
 obj-$(CONFIG_MSM_PROC_COMM_REGULATOR) += proccomm-regulator.o
 ifdef CONFIG_MSM_PROC_COMM_REGULATOR
@@ -387,60 +443,23 @@ obj-$(CONFIG_ARCH_MSM7X30) += board-msm7x30-regulator.o
 obj-$(CONFIG_ARCH_MSM7X27A) += board-msm7x27a-regulator.o
 endif
 
-obj-$(CONFIG_MACH_K2_WL) += board-k2_wl.o board-8930-all.o board-k2_wl-regulator.o
-obj-$(CONFIG_MACH_K2_WL) += htc_bdaddress.o board-k2_wl-rfkill.o htc_util.o
-obj-$(CONFIG_MACH_K2_WL) += board-k2_wl-keypad.o
-obj-$(CONFIG_MACH_K2_WL) += board-k2_wl-mmc.o board-k2_wl-wifi.o htc_wifi_nvs.o
-
-obj-$(CONFIG_MACH_K2_CL) += board-k2_cl.o board-k2_cl-all.o board-k2_cl-regulator.o htc_acoustic.o
-obj-$(CONFIG_MACH_K2_CL) += htc_bdaddress.o board-k2_cl-rfkill.o htc_sleep_clk.o htc_util.o board-k2_cl-camera.o
-obj-$(CONFIG_MACH_K2_CL) += board-k2_cl-keypad.o
-obj-$(CONFIG_MACH_K2_CL) += board-k2_cl-mmc.o board-k2_cl-wifi.o htc_wifi_nvs.o
-
-obj-$(CONFIG_MACH_K2_PLC_CL) += board-k2_plc_cl.o board-k2_plc_cl-all.o board-k2_plc_cl-regulator.o htc_acoustic.o
-obj-$(CONFIG_MACH_K2_PLC_CL) += htc_bdaddress.o board-k2_plc_cl-rfkill.o htc_sleep_clk.o htc_util.o board-k2_plc_cl-camera.o
-obj-$(CONFIG_MACH_K2_PLC_CL) += board-k2_plc_cl-keypad.o
-obj-$(CONFIG_MACH_K2_PLC_CL) += board-k2_plc_cl-mmc.o board-k2_plc_cl-wifi.o htc_wifi_nvs.o
-
-obj-$(CONFIG_MACH_K2_UL) += board-k2_ul.o board-k2_ul-all.o board-k2_ul-regulator.o htc_acoustic.o
-obj-$(CONFIG_MACH_K2_UL) += htc_bdaddress.o board-k2_ul-rfkill.o htc_sleep_clk.o htc_util.o board-k2_ul-camera.o
-obj-$(CONFIG_MACH_K2_UL) += board-k2_ul-keypad.o
-obj-$(CONFIG_MACH_K2_UL) += board-k2_ul-mmc.o board-k2_ul-wifi.o htc_wifi_nvs.o
-
-obj-$(CONFIG_MACH_K2_U) += board-k2_u.o board-k2_u-all.o board-k2_u-regulator.o htc_acoustic.o
-obj-$(CONFIG_MACH_K2_U) += htc_bdaddress.o board-k2_u-rfkill.o htc_sleep_clk.o htc_util.o board-k2_u-camera.o
-obj-$(CONFIG_MACH_K2_U) += board-k2_u-keypad.o
-obj-$(CONFIG_MACH_K2_U) += board-k2_u-mmc.o board-k2_u-wifi.o htc_wifi_nvs.o
-
-obj-$(CONFIG_MACH_TC2) += board-tc2.o board-tc2-all.o board-tc2-regulator.o htc_acoustic.o
-obj-$(CONFIG_MACH_TC2) += htc_bdaddress.o board-tc2-rfkill.o htc_sleep_clk.o htc_util.o board-tc2-camera.o
-obj-$(CONFIG_MACH_TC2) += board-tc2-keypad.o
-obj-$(CONFIG_MACH_TC2) += board-tc2-mmc.o board-tc2-wifi.o htc_wifi_nvs.o
-
-obj-$(CONFIG_MACH_OPERAUL) += board-operaul.o board-operaul-all.o board-operaul-regulator.o htc_acoustic.o
-obj-$(CONFIG_MACH_OPERAUL) += htc_bdaddress.o board-operaul-rfkill.o htc_sleep_clk.o htc_util.o board-operaul-camera.o
-obj-$(CONFIG_MACH_OPERAUL) += board-operaul-keypad.o
-obj-$(CONFIG_MACH_OPERAUL) += board-operaul-mmc.o board-operaul-wifi.o htc_wifi_nvs.o
-
-obj-$(CONFIG_ARCH_MSM8960) += mdm2.o mdm_common.o
+obj-$(CONFIG_ARCH_APQ8064) += mdm2.o mdm_common.o
+obj-$(CONFIG_QSC_MODEM) += qsc_ctrl.o
 obj-$(CONFIG_MSM_RTB) += msm_rtb.o
 obj-$(CONFIG_MSM_CACHE_ERP) += cache_erp.o
+obj-$(CONFIG_MSM_EBI_ERP) += ebi_erp.o
 obj-$(CONFIG_MSM_CACHE_DUMP) += msm_cache_dump.o
-obj-$(CONFIG_PERFLOCK) += perflock.o
 
 obj-$(CONFIG_MSM_HSIC_SYSMON) += hsic_sysmon.o
 obj-$(CONFIG_MSM_HSIC_SYSMON_TEST) += hsic_sysmon_test.o
 
 obj-$(CONFIG_MSM_RPM_SMD) += rpm-smd.o
 
-obj-$(CONFIG_HTC_HEADSET_MGR) += htc_headset_mgr.o
-obj-$(CONFIG_HTC_HEADSET_H2W) += htc_headset_h2w.o
-obj-$(CONFIG_HTC_HEADSET_GPIO) += htc_headset_gpio.o
-obj-$(CONFIG_HTC_HEADSET_MICROP) += htc_headset_microp.o
-obj-$(CONFIG_HTC_HEADSET_PMIC) += htc_headset_pmic.o
-obj-$(CONFIG_HTC_HEADSET_MISC) += htc_headset_misc.o
-obj-$(CONFIG_HTC_HEADSET_MAX8957) += htc_headset_max8957.o
-obj-$(CONFIG_HTC_HEADSET_8X60) += htc_headset_8x60.o
-obj-$(CONFIG_HTC_HEADSET_ONE_WIRE) += htc_headset_one_wire.o
+obj-$(CONFIG_PERFLOCK) += perflock.o
+obj-y += htc_ramdump.o
+
+obj-$(CONFIG_HTC_MONITOR) += htc_monitor.o
 
 obj-y += display/
+
+obj-$(CONFIG_IO_FOOTPRINT) += io_footprint.o

@@ -22,7 +22,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: siutils.h 321982 2012-03-19 06:58:08Z $
+ * $Id: siutils.h 336988 2012-06-05 20:35:30Z $
  */
 
 #ifndef	_siutils_h_
@@ -122,6 +122,21 @@ typedef void (*gpio_handler_t)(uint32 stat, void *arg);
 #define GPIO_CTRL_5_6_EN_MASK 0x60
 #define GPIO_CTRL_7_6_EN_MASK 0xC0
 #define GPIO_OUT_7_EN_MASK 0x80
+
+
+
+#define SI_CR4_CAP			(0x04)
+#define SI_CR4_BANKIDX		(0x40)
+#define SI_CR4_BANKINFO		(0x44)
+
+#define	ARMCR4_TCBBNB_MASK	0xf0
+#define	ARMCR4_TCBBNB_SHIFT	4
+#define	ARMCR4_TCBANB_MASK	0xf
+#define	ARMCR4_TCBANB_SHIFT	0
+
+#define	SICF_CPUHALT		(0x0020)
+#define	ARMCR4_BSZ_MASK		0x3f
+#define	ARMCR4_BSZ_MULT		8192
 
 
 
@@ -267,6 +282,7 @@ extern char *si_coded_devpathvar(si_t *sih, char *varname, int var_len, const ch
 
 extern uint8 si_pcieclkreq(si_t *sih, uint32 mask, uint32 val);
 extern uint32 si_pcielcreg(si_t *sih, uint32 mask, uint32 val);
+extern void si_pcie_set_error_injection(si_t *sih, uint32 mode);
 extern void si_war42780_clkreq(si_t *sih, bool clkreq);
 extern void si_pci_down(si_t *sih);
 extern void si_pci_up(si_t *sih);
@@ -310,4 +326,8 @@ extern int si_pcie_configspace_get(si_t *sih, uint8 *buf, uint size);
 char *si_getnvramflvar(si_t *sih, const char *name);
 
 
+extern uint32 si_tcm_size(si_t *sih);
+
+extern int si_set_sromctl(si_t *sih, uint32 value);
+extern uint32 si_get_sromctl(si_t *sih);
 #endif	

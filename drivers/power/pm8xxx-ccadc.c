@@ -34,7 +34,6 @@
 			printk(KERN_INFO pr_fmt_debug(fmt), ##__VA_ARGS__); \
 	} while (0)
 
-/* to dump BMS log*/
 static bool flag_enable_bms_chg_log;
 
 #define CCADC_ANA_PARAM		0x240
@@ -47,7 +46,6 @@ static bool flag_enable_bms_chg_log;
 #define CCADC_FULLSCALE_TRIM1	0x34C
 #define CCADC_FULLSCALE_TRIM0	0x34D
 
-/* note : TRIM1 is the msb and TRIM0 is the lsb */
 #define ADC_ARB_SECP_CNTRL	0x190
 #define ADC_ARB_SECP_AMUX_CNTRL	0x191
 #define ADC_ARB_SECP_ANA_PARAM	0x192
@@ -101,15 +99,11 @@ static s64 microvolt_to_ccadc_reading(struct pm8xxx_ccadc_chip *chip, s64 cc)
 
 static int cc_adjust_for_offset(u16 raw)
 {
-	/* this has the intrinsic offset */
+	
 	return (int)raw - the_chip->ccadc_offset;
 }
 
 #define GAIN_REFERENCE_UV 25000
-/*
- * gain compensation for ccadc readings - common for vsense based and
- * couloumb counter based readings
- */
 s64 pm8xxx_cc_adjust_for_gain(s64 uv)
 {
 	if (the_chip == NULL || the_chip->ccadc_gain_uv == 0)
@@ -168,7 +162,7 @@ static int calib_ccadc_enable_arbiter(struct pm8xxx_ccadc_chip *chip)
 {
 	int rc;
 
-	/* enable Arbiter, must be sent twice */
+	
 	rc = pm_ccadc_masked_write(chip, ADC_ARB_SECP_CNTRL,
 			SEL_CCADC_BIT | EN_ARB_BIT, SEL_CCADC_BIT | EN_ARB_BIT);
 	if (rc < 0) {
@@ -190,7 +184,7 @@ static int calib_start_conv(struct pm8xxx_ccadc_chip *chip,
 	int rc, i;
 	u8 data_msb, data_lsb, reg;
 
-	/* Start conversion */
+	
 	rc = pm_ccadc_masked_write(chip, ADC_ARB_SECP_CNTRL,
 					START_CONV_BIT, START_CONV_BIT);
 	if (rc < 0) {
@@ -198,7 +192,7 @@ static int calib_start_conv(struct pm8xxx_ccadc_chip *chip,
 		return rc;
 	}
 
-	/* Wait for End of conversion */
+	
 	for (i = 0; i < ADC_WAIT_COUNT; i++) {
 		rc = pm8xxx_readb(chip->dev->parent,
 					ADC_ARB_SECP_CNTRL, &reg);
@@ -212,8 +206,8 @@ static int calib_start_conv(struct pm8xxx_ccadc_chip *chip,
 			break;
 	}
 	if (i == ADC_WAIT_COUNT) {
-		pr_err("waited too long for offset eoc\n");
-		return rc;
+		pr_err("waited too long for offset eoc returning -EBUSY\n");
+		return -EBUSY;
 	}
 
 	rc = pm8xxx_readb(chip->dev->parent, ADC_ARB_SECP_DATA0, &data_lsb);
@@ -298,7 +292,7 @@ static int calib_ccadc_program_trim(struct pm8xxx_ccadc_chip *chip,
 			return rc;
 		}
 
-		/* break if a ccadc conversion is not happening */
+		
 		in_progress = (((cntrl >> ADC_ARB_BMS_CNTRL_CCADC_SHIFT)
 			& ADC_ARB_BMS_CNTRL_CONV_MASK) == BMS_CONV_IN_PROGRESS);
 
@@ -333,7 +327,7 @@ void pm8xxx_calib_ccadc(void)
 	int i, rc;
 
 	if (!the_chip) {
-		pr_err("pm8xxx_calib_ccadc , chip not initialized\n");
+		pr_err("chip not initialized\n");
 		return;
 	}
 
@@ -350,10 +344,6 @@ void pm8xxx_calib_ccadc(void)
 		goto bail;
 	}
 
-	/*
-	 * Set decimation ratio to 4k, lower ratio may be used in order to speed
-	 * up, pending verification through bench
-	 */
 	rc = pm8xxx_writeb(the_chip->dev->parent, ADC_ARB_SECP_DIG_PARAM,
 							CCADC_CALIB_DIG_PARAM);
 	if (rc < 0) {
@@ -363,7 +353,7 @@ void pm8xxx_calib_ccadc(void)
 
 	result_offset = 0;
 	for (i = 0; i < SAMPLE_COUNT; i++) {
-		/* Short analog inputs to CCADC internally to ground */
+		
 		rc = pm8xxx_writeb(the_chip->dev->parent, ADC_ARB_SECP_RSV,
 							CCADC_CALIB_RSV_GND);
 		if (rc < 0) {
@@ -371,7 +361,7 @@ void pm8xxx_calib_ccadc(void)
 			goto bail;
 		}
 
-		/* Enable CCADC */
+		
 		rc = pm8xxx_writeb(the_chip->dev->parent,
 				ADC_ARB_SECP_ANA_PARAM, CCADC_CALIB_ANA_PARAM);
 		if (rc < 0) {
@@ -405,7 +395,7 @@ void pm8xxx_calib_ccadc(void)
 	if (rc) {
 		pr_debug("error = %d programming offset trim 0x%02x 0x%02x\n",
 					rc, data_msb, data_lsb);
-		/* enable the interrupt and write it when it fires */
+		
 		enable_irq(the_chip->eoc_irq);
 	}
 
@@ -415,10 +405,6 @@ void pm8xxx_calib_ccadc(void)
 		goto bail;
 	}
 
-	/*
-	 * Set decimation ratio to 4k, lower ratio may be used in order to speed
-	 * up, pending verification through bench
-	 */
 	rc = pm8xxx_writeb(the_chip->dev->parent, ADC_ARB_SECP_DIG_PARAM,
 							CCADC_CALIB_DIG_PARAM);
 	if (rc < 0) {
@@ -435,7 +421,7 @@ void pm8xxx_calib_ccadc(void)
 			goto bail;
 		}
 
-		/* Enable CCADC */
+		
 		rc = pm8xxx_writeb(the_chip->dev->parent,
 			ADC_ARB_SECP_ANA_PARAM, CCADC_CALIB_ANA_PARAM);
 		if (rc < 0) {
@@ -453,11 +439,6 @@ void pm8xxx_calib_ccadc(void)
 	}
 	result_gain = result_gain / SAMPLE_COUNT;
 
-	/*
-	 * result_offset includes INTRINSIC OFFSET
-	 * the_chip->ccadc_gain_uv will be the actual voltage
-	 * measured for 25000UV
-	 */
 	the_chip->ccadc_gain_uv = pm8xxx_ccadc_reading_to_microvolt(
 				the_chip->revision,
 				((s64)result_gain - result_offset));
@@ -480,18 +461,21 @@ static void calibrate_ccadc_work(struct work_struct *work)
 {
 	struct pm8xxx_ccadc_chip *chip = container_of(work,
 			struct pm8xxx_ccadc_chip, calib_ccadc_work.work);
+
 	pm8xxx_calib_ccadc();
 	schedule_delayed_work(&chip->calib_ccadc_work,
 			round_jiffies_relative(msecs_to_jiffies
 			(chip->calib_delay_ms)));
 }
 
-
 static irqreturn_t pm8921_bms_ccadc_eoc_handler(int irq, void *data)
 {
 	u8 data_msb, data_lsb;
 	struct pm8xxx_ccadc_chip *chip = data;
 	int rc;
+
+	if (!the_chip)
+		goto out;
 
 	pr_debug("irq = %d triggered\n", irq);
 	data_msb = chip->ccadc_offset >> 8;
@@ -501,6 +485,7 @@ static irqreturn_t pm8921_bms_ccadc_eoc_handler(int irq, void *data)
 						data_msb, data_lsb, 0);
 	disable_irq_nosync(chip->eoc_irq);
 
+out:
 	return IRQ_HANDLED;
 }
 
@@ -572,10 +557,6 @@ int pm8xxx_ccadc_get_battery_current(int *bat_current_ua)
 	}
 
 	*bat_current_ua = voltage_uv * 1000/the_chip->r_sense;
-	/*
-	 * ccadc reads +ve current when the battery is charging
-	 * We need to return -ve if the battery is charging
-	 */
 	*bat_current_ua = -1 * (*bat_current_ua);
 	pr_debug("bat current = %d ma\n", *bat_current_ua);
 	return 0;
@@ -756,6 +737,7 @@ static int __devinit pm8xxx_ccadc_probe(struct platform_device *pdev)
 	chip->revision = pm8xxx_get_revision(chip->dev->parent);
 	chip->eoc_irq = res->start;
 	chip->r_sense = pdata->r_sense;
+	pr_info("r_sense=%u\n", chip->r_sense);
 	chip->calib_delay_ms = pdata->calib_delay_ms;
 
 	calib_ccadc_read_offset_and_gain(chip,
@@ -773,7 +755,6 @@ static int __devinit pm8xxx_ccadc_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, chip);
 	the_chip = chip;
-
 	INIT_DELAYED_WORK(&chip->calib_ccadc_work, calibrate_ccadc_work);
 	schedule_delayed_work(&chip->calib_ccadc_work, 0);
 

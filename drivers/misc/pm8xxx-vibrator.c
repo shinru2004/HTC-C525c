@@ -19,6 +19,7 @@
 #include <linux/slab.h>
 #include <linux/mfd/pm8xxx/core.h>
 #include <linux/mfd/pm8xxx/vibrator.h>
+#include <linux/sched.h>
 
 #include "../staging/android/timed_output.h"
 
@@ -27,6 +28,7 @@
 #define VIB_DRV_SEL_MASK	0xf8
 #define VIB_DRV_SEL_SHIFT	0x03
 #define VIB_DRV_EN_MANUAL_MASK	0xfc
+#define VIB_DRV_LOGIC_SHIFT	0x2
 
 #define VIB_MAX_LEVEL_mV	3100
 #define VIB_MIN_LEVEL_mV	1200
@@ -42,16 +44,48 @@ struct pm8xxx_vib {
 	struct hrtimer vib_timer;
 	struct timed_output_dev timed_dev;
 	spinlock_t lock;
-	struct work_struct work;
 	struct device *dev;
 	const struct pm8xxx_vibrator_platform_data *pdata;
 	int state;
 	int level;
 	u8  reg_vib_drv;
 };
+static struct pm8xxx_vib *vib_dev;
 static int switch_state = 1;
+static int time_th = -1;
+static int vib_notified = 0;
+int pm8xxx_vibrator_config(struct pm8xxx_vib_config *vib_config)
+{
+	u8 reg = 0;
+	int rc;
 
-/* REVISIT: just for debugging, will be removed in final working version */
+	if (vib_dev == NULL) {
+		pr_err("%s: vib_dev is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	if (vib_config->drive_mV) {
+		if ((vib_config->drive_mV < VIB_MIN_LEVEL_mV) ||
+			(vib_config->drive_mV > VIB_MAX_LEVEL_mV)) {
+			pr_err("Invalid vibrator drive strength\n");
+			return -EINVAL;
+		}
+	}
+
+	reg = (vib_config->drive_mV / 100) << VIB_DRV_SEL_SHIFT;
+
+	reg |= (!!vib_config->active_low) << VIB_DRV_LOGIC_SHIFT;
+
+	reg |= vib_config->enable_mode;
+
+	rc = pm8xxx_writeb(vib_dev->dev->parent, VIB_DRV, reg);
+	if (rc)
+		pr_err("%s: pm8xxx write failed: rc=%d\n", __func__, rc);
+
+	return rc;
+}
+EXPORT_SYMBOL(pm8xxx_vibrator_config);
+
 static void __dump_vib_regs(struct pm8xxx_vib *vib, char *msg)
 {
 	u8 temp;
@@ -99,6 +133,7 @@ static int pm8xxx_vib_set_on(struct pm8xxx_vib *vib)
 		VIB_INFO_LOG("%s vibrator is disable by switch\n",__func__);
 		return 0;
 	}
+
 	rc = pm8xxx_vib_write_u8(vib, val1, VIB_DRV);
 	if (rc < 0){
 		VIB_ERR_LOG("%s writing pmic fail, ret:%X\n", __func__, rc);
@@ -122,6 +157,10 @@ static int pm8xxx_vib_set_off(struct pm8xxx_vib *vib)
 		VIB_ERR_LOG("%s writing pmic fail, ret:%X\n", __func__, rc);
 		return rc;
 	}
+	if (vib->pdata->camera_off_cb && vib_notified == 1) {
+		vib->pdata->camera_off_cb();
+		vib_notified = 0;
+	}
 	__dump_vib_regs(vib, "vib_set_end");
 	VIB_INFO_LOG("%s - \n", __func__);
 	return rc;
@@ -131,8 +170,12 @@ static void pm8xxx_vib_enable(struct timed_output_dev *dev, int value)
 {
 	struct pm8xxx_vib *vib = container_of(dev, struct pm8xxx_vib,
 					 timed_dev);
+	if (time_th >= 0 && value > time_th && vib->pdata->camera_cb) {
+		vib->pdata->camera_cb();
+		vib_notified = 1;
+	}
 
-	VIB_INFO_LOG("%s vibrate period: %d msec\n",__func__,value);
+	VIB_INFO_LOG("%s vibrate period: %d msec: %s(parent:%s), tgid=%d\n",__func__,value, current->comm, current->parent->comm, current->tgid);
 retry:
 
 	if (hrtimer_try_to_cancel(&vib->vib_timer) < 0) {
@@ -152,13 +195,6 @@ retry:
 	}
 }
 
-static void pm8xxx_vib_update(struct work_struct *work)
-{
-	struct pm8xxx_vib *vib = container_of(work, struct pm8xxx_vib,
-					 work);
-
-	pm8xxx_vib_set_off(vib);
-}
 
 static int pm8xxx_vib_get_time(struct timed_output_dev *dev)
 {
@@ -178,7 +214,6 @@ static enum hrtimer_restart pm8xxx_vib_timer_func(struct hrtimer *timer)
 							 vib_timer);
 	VIB_INFO_LOG("%s \n",__func__);
 	pm8xxx_vib_set_off(vib);
-	/* schedule_work(&vib->work); */
 
 	return HRTIMER_NORESTART;
 }
@@ -221,8 +256,7 @@ static int pm8xxx_vib_suspend(struct device *dev)
 	struct pm8xxx_vib *vib = dev_get_drvdata(dev);
 
 	hrtimer_cancel(&vib->vib_timer);
-	cancel_work_sync(&vib->work);
-	/* turn-off vibrator */
+	
 	pm8xxx_vib_set_off(vib);
 
 	return 0;
@@ -249,8 +283,26 @@ static ssize_t switch_store(
         switch_state = switch_status;
         return size;
 }
+static ssize_t threshold_show(struct device *dev, struct device_attribute *attr,
+                char *buf)
+{
+        return sprintf(buf, "time_threshold:%d \n", time_th);
+}
+
+static ssize_t threshold_store(
+                struct device *dev, struct device_attribute *attr,
+                const char *buf, size_t size)
+{
+        int time_buf;
+        time_buf = -1;
+        sscanf(buf, "%d ",&time_buf);
+        VIB_INFO_LOG("%s: %d\n",__func__,time_buf);
+        time_th = time_buf;
+        return size;
+}
 
 static DEVICE_ATTR(function_switch, S_IRUGO | S_IWUSR, switch_show, switch_store);
+static DEVICE_ATTR(time_threshold, S_IRUGO | S_IWUSR, threshold_show, threshold_store);
 
 static int __devinit pm8xxx_vib_probe(struct platform_device *pdev)
 
@@ -275,9 +327,10 @@ static int __devinit pm8xxx_vib_probe(struct platform_device *pdev)
 	vib->pdata	= pdata;
 	vib->level	= pdata->level_mV / 100;
 	vib->dev	= &pdev->dev;
+	if (pdata->threshold)
+		time_th = pdata->threshold;
 
 	spin_lock_init(&vib->lock);
-	INIT_WORK(&vib->work, pm8xxx_vib_update);
 
 	hrtimer_init(&vib->vib_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	vib->vib_timer.function = pm8xxx_vib_timer_func;
@@ -288,10 +341,6 @@ static int __devinit pm8xxx_vib_probe(struct platform_device *pdev)
 
 	__dump_vib_regs(vib, "boot_vib_default");
 
-	/*
-	 * Configure the vibrator, it operates in manual mode
-	 * for timed_output framework.
-	 */
 	rc = pm8xxx_vib_read_u8(vib, &val, VIB_DRV);
 	if (rc < 0)
 		goto err_read_vib;
@@ -309,13 +358,20 @@ static int __devinit pm8xxx_vib_probe(struct platform_device *pdev)
 	if (rc < 0) {
 		VIB_ERR_LOG("%s, create sysfs fail: voltage_level\n", __func__);
 	}
-	rc = device_create_file(vib->timed_dev.dev, &dev_attr_function_switch);
-	if (rc < 0) {
+
+    rc = device_create_file(vib->timed_dev.dev, &dev_attr_function_switch);
+    if (rc < 0) {
 		VIB_ERR_LOG("%s, create sysfs fail: function_switch\n", __func__);
 	}
+    rc = device_create_file(vib->timed_dev.dev, &dev_attr_time_threshold);
+    if (rc < 0) {
+		VIB_ERR_LOG("%s, create sysfs fail: time_threshold\n", __func__);
+	}
+
+	pm8xxx_vib_enable(&vib->timed_dev, pdata->initial_vibrate_ms);
 
 	platform_set_drvdata(pdev, vib);
-
+	vib_dev = vib;
 	return 0;
 
 err_read_vib:
@@ -327,7 +383,6 @@ static int __devexit pm8xxx_vib_remove(struct platform_device *pdev)
 {
 	struct pm8xxx_vib *vib = platform_get_drvdata(pdev);
 
-	cancel_work_sync(&vib->work);
 	hrtimer_cancel(&vib->vib_timer);
 	timed_output_dev_unregister(&vib->timed_dev);
 	platform_set_drvdata(pdev, NULL);
@@ -359,6 +414,7 @@ static void __exit pm8xxx_vib_exit(void)
 	platform_driver_unregister(&pm8xxx_vib_driver);
 }
 module_exit(pm8xxx_vib_exit);
+
 
 MODULE_ALIAS("platform:" PM8XXX_VIBRATOR_DEV_NAME);
 MODULE_DESCRIPTION("pm8xxx vibrator driver");

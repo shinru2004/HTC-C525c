@@ -15,7 +15,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 
-enum{
+enum {
 	MSM_SHOW_IRQ_DEBUG_RESUME = BIT(0),
 };
 

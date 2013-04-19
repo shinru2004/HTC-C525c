@@ -62,14 +62,24 @@ obj-$(CONFIG_SND_SOC_VOICE) += msm-pcm-voice.o msm-pcm-voip.o
 snd-soc-qdsp6-objs += msm-pcm-lpa.o msm-pcm-afe.o
 obj-$(CONFIG_SND_SOC_QDSP6) += snd-soc-qdsp6.o
 
-snd-soc-msm8960-objs := msm8960.o apq8064.o mpq8064.o
-obj-$(CONFIG_MACH_TC2) += board-tc2-audio.o
-obj-$(CONFIG_MACH_OPERAUL) += board-operaul-audio.o
-obj-$(CONFIG_MACH_K2_CL) +=  board-k2_cl-audio.o
-obj-$(CONFIG_MACH_K2_UL) +=  board-k2_ul-audio.o
-obj-$(CONFIG_MACH_K2_PLC_CL) += board-k2_plc_cl-audio.o
-obj-$(CONFIG_MACH_K2_U) +=  board-k2_u-audio.o
+ifdef CONFIG_ARCH_APQ8064
+ifdef CONFIG_ARCH_DUMMY
+else ifdef CONFIG_ARCH_DUMMY
+else
+snd-soc-msm8960-objs := apq8064.o mpq8064.o
+endif
 obj-$(CONFIG_SND_SOC_MSM8960) += snd-soc-msm8960.o
+else
+# Move board-specific msm8930.o to mach-msm
+#ifdef CONFIG_ARCH_MSM8930
+#snd-soc-msm8960-objs := msm8930.o
+#obj-$(CONFIG_SND_SOC_MSM8960) += snd-soc-msm8960.o
+#else
+# Move board-specific msm8960.o to mach-msm
+#snd-soc-msm8960-objs := msm8960.o
+#obj-$(CONFIG_SND_SOC_MSM8960) += snd-soc-msm8960.o
+#endif
+endif
 
 # Generic MSM drivers
 snd-soc-hostless-pcm-objs := msm-pcm-hostless.o
@@ -82,4 +92,15 @@ obj-$(CONFIG_SND_SOC_MSM8660_APQ) += snd-soc-msm8660-apq.o
 snd-soc-mdm9615-objs := mdm9615.o
 obj-$(CONFIG_SND_SOC_MDM9615) += snd-soc-mdm9615.o
 
+# for MSM 8974 sound card driver
+obj-$(CONFIG_SND_SOC_MSM_QDSP6V2_INTF) += qdsp6v2/
+snd-soc-msm8974-objs := msm8974.o
+obj-$(CONFIG_SND_SOC_MSM8974) += snd-soc-msm8974.o
+
+snd-soc-qdsp6v2-objs := msm-dai-fe.o msm-dai-stub.o
+obj-$(CONFIG_SND_SOC_QDSP6V2) += snd-soc-qdsp6v2.o
+
+#//HTC_AUD_START LPA5
 CFLAGS_msm-compr-q6.o := -DDEBUG
+CFLAGS_msm-pcm-lpa.o := -DDEBUG
+#//HTC_AUD_END LPA5

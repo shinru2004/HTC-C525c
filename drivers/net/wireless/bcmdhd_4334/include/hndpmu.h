@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: hndpmu.h 241182 2011-02-17 21:50:03Z $
+ * $Id: hndpmu.h 344142 2012-07-11 10:50:39Z $
  */
 
 #ifndef _hndpmu_h_
@@ -33,4 +33,4 @@ extern void si_sdiod_drive_strength_init(si_t *sih, osl_t *osh, uint32 drivestre
 
 extern void si_pmu_minresmask_htavail_set(si_t *sih, osl_t *osh, bool set_clear);
 
-#endif /* _hndpmu_h_ */
+#endif 

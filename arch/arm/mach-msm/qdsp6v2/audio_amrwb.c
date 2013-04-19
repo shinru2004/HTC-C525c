@@ -2,7 +2,7 @@
  *
  * Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,23 +17,10 @@
 
 #include "audio_utils_aio.h"
 
-static void q6_audio_amrwb_cb(uint32_t opcode, uint32_t token,
-		uint32_t *payload, void *priv)
-{
-	struct q6audio_aio *audio = (struct q6audio_aio *)priv;
-
-	pr_debug("%s:opcde = %d token = 0x%x\n", __func__, opcode, token);
-	switch (opcode) {
-	case ASM_DATA_EVENT_WRITE_DONE:
-	case ASM_DATA_EVENT_READ_DONE:
-	case ASM_DATA_CMDRSP_EOS:
-		audio_aio_cb(opcode, token, payload, audio);
-		break;
-	default:
-		pr_debug("%s:Unhandled event = 0x%8x\n", __func__, opcode);
-		break;
-	}
-}
+#undef pr_info
+#undef pr_err
+#define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
+#define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
 
 #ifdef CONFIG_DEBUG_FS
 static const struct file_operations audio_amrwb_debug_fops = {
@@ -52,7 +39,7 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		pr_debug("%s[%p]: AUDIO_START session_id[%d]\n", __func__,
 						audio, audio->ac->session);
 		if (audio->feedback == NON_TUNNEL_MODE) {
-			/* Configure PCM output block */
+			
 			rc = q6asm_enc_cfg_blk_pcm(audio->ac,
 					audio->pcm_cfg.sample_rate,
 					audio->pcm_cfg.channel_count);
@@ -92,7 +79,7 @@ static int audio_open(struct inode *inode, struct file *file)
 	int rc = 0;
 
 #ifdef CONFIG_DEBUG_FS
-	/* 4 bytes represents decoder number, 1 byte for terminate string */
+	
 	char name[sizeof "msm_amrwb_" + 5];
 #endif
 	audio = kzalloc(sizeof(struct q6audio_aio), GFP_KERNEL);
@@ -103,7 +90,7 @@ static int audio_open(struct inode *inode, struct file *file)
 	}
 	audio->pcm_cfg.buffer_size = PCM_BUFSZ_MIN;
 
-	audio->ac = q6asm_audio_client_alloc((app_cb) q6_audio_amrwb_cb,
+	audio->ac = q6asm_audio_client_alloc((app_cb) q6_audio_cb,
 					     (void *)audio);
 
 	if (!audio->ac) {
@@ -112,7 +99,7 @@ static int audio_open(struct inode *inode, struct file *file)
 		return -ENOMEM;
 	}
 
-	/* open in T/NT mode */
+	
 	if ((file->f_mode & FMODE_WRITE) && (file->f_mode & FMODE_READ)) {
 		rc = q6asm_open_read_write(audio->ac, FORMAT_LINEAR_PCM,
 					   FORMAT_AMRWB);

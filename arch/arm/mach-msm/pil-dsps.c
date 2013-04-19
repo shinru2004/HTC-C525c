@@ -34,7 +34,7 @@
 static int init_image_dsps(struct pil_desc *pil, const u8 *metadata,
 				     size_t size)
 {
-	/* Bring memory and bus interface out of reset */
+	
 	writel_relaxed(PPSS_RESET_PROC_RESET, PPSS_RESET);
 	writel_relaxed(CLK_BRANCH_ENA, PPSS_HCLK_CTL);
 	mb();
@@ -46,7 +46,7 @@ static int reset_dsps(struct pil_desc *pil)
 	writel_relaxed(CLK_BRANCH_ENA, PPSS_PROC_CLK_CTL);
 	while (readl_relaxed(CLK_HALT_DFAB_STATE) & BIT(18))
 		cpu_relax();
-	/* Bring DSPS out of reset */
+	
 	writel_relaxed(0x0, PPSS_RESET);
 	return 0;
 }

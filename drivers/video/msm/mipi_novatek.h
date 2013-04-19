@@ -18,5 +18,5 @@
 
 int mipi_novatek_device_register(struct msm_panel_info *pinfo,
 					u32 channel, u32 panel);
-extern int panel_type;
-#endif  /* MIPI_NOVATEK_BLUE_H */
+
+#endif  

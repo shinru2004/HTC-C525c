@@ -21,9 +21,10 @@
    SOFTWARE IS DISCLAIMED.
 */
 
-/* Bluetooth HCI Management interface */
 
 #include <linux/uaccess.h>
+#include <linux/interrupt.h>
+#include <linux/module.h>
 #include <asm/unaligned.h>
 
 #include <net/bluetooth/bluetooth.h>
@@ -31,13 +32,6 @@
 #include <net/bluetooth/l2cap.h>
 #include <net/bluetooth/mgmt.h>
 #include <net/bluetooth/smp.h>
-
-/* HTC_BT add begin */
-#ifdef BT_DBG
-#undef  BT_DBG
-#define BT_DBG(D...)
-#endif
-/* HTC_BT add end */
 
 #define MGMT_VERSION	0
 #define MGMT_REVISION	1
@@ -448,7 +442,7 @@ static int set_limited_discoverable(struct sock *sk, u16 index,
 	struct hci_cp_write_current_iac_lap dcp;
 	int update_cod;
 	int err = 0;
-	/* General Inquiry LAP: 0x9E8B33, Limited Inquiry LAP: 0x9E8B00 */
+	
 	u8 lap[] = { 0x33, 0x8b, 0x9e, 0x00, 0x8b, 0x9e };
 
 	cp = (void *) data;
@@ -722,17 +716,17 @@ failed:
 	return err;
 }
 
-#define EIR_FLAGS		0x01 /* flags */
-#define EIR_UUID16_SOME		0x02 /* 16-bit UUID, more available */
-#define EIR_UUID16_ALL		0x03 /* 16-bit UUID, all listed */
-#define EIR_UUID32_SOME		0x04 /* 32-bit UUID, more available */
-#define EIR_UUID32_ALL		0x05 /* 32-bit UUID, all listed */
-#define EIR_UUID128_SOME	0x06 /* 128-bit UUID, more available */
-#define EIR_UUID128_ALL		0x07 /* 128-bit UUID, all listed */
-#define EIR_NAME_SHORT		0x08 /* shortened local name */
-#define EIR_NAME_COMPLETE	0x09 /* complete local name */
-#define EIR_TX_POWER		0x0A /* transmit power level */
-#define EIR_DEVICE_ID		0x10 /* device ID */
+#define EIR_FLAGS		0x01 
+#define EIR_UUID16_SOME		0x02 
+#define EIR_UUID16_ALL		0x03 
+#define EIR_UUID32_SOME		0x04 
+#define EIR_UUID32_ALL		0x05 
+#define EIR_UUID128_SOME	0x06 
+#define EIR_UUID128_ALL		0x07 
+#define EIR_NAME_SHORT		0x08 
+#define EIR_NAME_COMPLETE	0x09 
+#define EIR_TX_POWER		0x0A 
+#define EIR_DEVICE_ID		0x10 
 
 #define PNP_INFO_SVCLASS_ID		0x1200
 
@@ -772,14 +766,14 @@ static void create_eir(struct hci_dev *hdev, u8 *data)
 	name_len = strnlen(hdev->dev_name, HCI_MAX_EIR_LENGTH);
 
 	if (name_len > 0) {
-		/* EIR Data type */
+		
 		if (name_len > 48) {
 			name_len = 48;
 			ptr[1] = EIR_NAME_SHORT;
 		} else
 			ptr[1] = EIR_NAME_COMPLETE;
 
-		/* EIR Data length */
+		
 		ptr[0] = name_len + 1;
 
 		memcpy(ptr + 2, hdev->dev_name, name_len);
@@ -790,7 +784,7 @@ static void create_eir(struct hci_dev *hdev, u8 *data)
 
 	memset(uuid16_list, 0, sizeof(uuid16_list));
 
-	/* Group all UUID16 types */
+	
 	list_for_each(p, &hdev->uuids) {
 		struct bt_uuid *uuid = list_entry(p, struct bt_uuid, list);
 		u16 uuid16;
@@ -805,13 +799,13 @@ static void create_eir(struct hci_dev *hdev, u8 *data)
 		if (uuid16 == PNP_INFO_SVCLASS_ID)
 			continue;
 
-		/* Stop if not enough space to put next UUID */
+		
 		if (eir_len + 2 + sizeof(u16) > HCI_MAX_EIR_LENGTH) {
 			truncated = 1;
 			break;
 		}
 
-		/* Check for duplicates */
+		
 		for (i = 0; uuid16_list[i] != 0; i++)
 			if (uuid16_list[i] == uuid16)
 				break;
@@ -825,7 +819,7 @@ static void create_eir(struct hci_dev *hdev, u8 *data)
 	if (uuid16_list[0] != 0) {
 		u8 *length = ptr;
 
-		/* EIR Data type */
+		
 		ptr[1] = truncated ? EIR_UUID16_SOME : EIR_UUID16_ALL;
 
 		ptr += 2;
@@ -836,7 +830,7 @@ static void create_eir(struct hci_dev *hdev, u8 *data)
 			*ptr++ = (uuid16_list[i] & 0xff00) >> 8;
 		}
 
-		/* EIR Data length */
+		
 		*length = (i * sizeof(u16)) + 1;
 	}
 }
@@ -1168,7 +1162,7 @@ static int remove_key(struct sock *sk, u16 index, unsigned char *data, u16 len)
 		struct hci_cp_disconnect dc;
 
 		put_unaligned_le16(conn->handle, &dc.handle);
-		dc.reason = 0x13; /* Remote User Terminated Connection */
+		dc.reason = 0x13; 
 		err = hci_send_cmd(hdev, HCI_OP_DISCONNECT, 0, NULL);
 	}
 
@@ -1228,7 +1222,7 @@ static int disconnect(struct sock *sk, u16 index, unsigned char *data, u16 len)
 	}
 
 	put_unaligned_le16(conn->handle, &dc.handle);
-	dc.reason = 0x13; /* Remote User Terminated Connection */
+	dc.reason = 0x13; 
 
 	err = hci_send_cmd(hdev, HCI_OP_DISCONNECT, sizeof(dc), &dc);
 	if (err < 0)
@@ -1513,7 +1507,7 @@ static void pairing_complete(struct pending_cmd *cmd, u8 status)
 
 	cmd_complete(cmd->sk, cmd->index, MGMT_OP_PAIR_DEVICE, &rp, sizeof(rp));
 
-	/* So we don't get further callbacks for this connection */
+	
 	conn->connect_cfm_cb = NULL;
 	conn->security_cfm_cb = NULL;
 	conn->disconn_cfm_cb = NULL;
@@ -1620,22 +1614,28 @@ static int pair_device(struct sock *sk, u16 index, unsigned char *data, u16 len)
 
 	hci_dev_lock_bh(hdev);
 
+	BT_DBG("SSP Cap is %d", cp->ssp_cap);
 	io_cap = cp->io_cap;
-
-	sec_level = BT_SECURITY_MEDIUM;
-	auth_type = HCI_AT_DEDICATED_BONDING;
+	if ((cp->ssp_cap == 0) || (io_cap == 0x03)) {
+		sec_level = BT_SECURITY_MEDIUM;
+		auth_type = HCI_AT_DEDICATED_BONDING;
+	} else {
+		sec_level = BT_SECURITY_HIGH;
+		auth_type = HCI_AT_DEDICATED_BONDING_MITM;
+	}
 
 	entry = hci_find_adv_entry(hdev, &cp->bdaddr);
 	if (entry && entry->flags & 0x04) {
 		conn = hci_connect(hdev, LE_LINK, 0, &cp->bdaddr, sec_level,
 								auth_type);
 	} else {
-		/* ACL-SSP does not support io_cap 0x04 (KeyboadDisplay) */
+		
 		if (io_cap == 0x04)
 			io_cap = 0x01;
 		conn = hci_connect(hdev, ACL_LINK, 0, &cp->bdaddr, sec_level,
 								auth_type);
-		conn->auth_initiator = 1;
+		if(conn)
+                    conn->auth_initiator = 1;
 	}
 
 	if (IS_ERR(conn)) {
@@ -1813,81 +1813,6 @@ failed:
 	return err;
 }
 
-static int set_rssi_reporter(struct sock *sk, u16 index,
-				unsigned char *data, u16 len)
-{
-	struct mgmt_cp_set_rssi_reporter *cp = (void *) data;
-	struct hci_dev *hdev;
-	struct hci_conn *conn;
-	int err = 0;
-
-	if (len != sizeof(*cp))
-		return cmd_status(sk, index, MGMT_OP_SET_RSSI_REPORTER,
-								EINVAL);
-
-	hdev = hci_dev_get(index);
-	if (!hdev)
-		return cmd_status(sk, index, MGMT_OP_SET_RSSI_REPORTER,
-							ENODEV);
-
-	hci_dev_lock_bh(hdev);
-
-	conn = hci_conn_hash_lookup_ba(hdev, LE_LINK, &cp->bdaddr);
-
-	if (!conn) {
-		err = cmd_status(sk, index, MGMT_OP_SET_RSSI_REPORTER,
-						ENOTCONN);
-		goto failed;
-	}
-
-	BT_DBG("updateOnThreshExceed %d ", cp->updateOnThreshExceed);
-	hci_conn_set_rssi_reporter(conn, cp->rssi_threshold,
-			__le16_to_cpu(cp->interval), cp->updateOnThreshExceed);
-
-failed:
-	hci_dev_unlock_bh(hdev);
-	hci_dev_put(hdev);
-
-	return err;
-}
-
-static int unset_rssi_reporter(struct sock *sk, u16 index,
-			unsigned char *data, u16 len)
-{
-	struct mgmt_cp_unset_rssi_reporter *cp = (void *) data;
-	struct hci_dev *hdev;
-	struct hci_conn *conn;
-	int err = 0;
-
-	if (len != sizeof(*cp))
-		return cmd_status(sk, index, MGMT_OP_UNSET_RSSI_REPORTER,
-					EINVAL);
-
-	hdev = hci_dev_get(index);
-
-	if (!hdev)
-		return cmd_status(sk, index, MGMT_OP_UNSET_RSSI_REPORTER,
-					ENODEV);
-
-	hci_dev_lock_bh(hdev);
-
-	conn = hci_conn_hash_lookup_ba(hdev, LE_LINK, &cp->bdaddr);
-
-	if (!conn) {
-		err = cmd_status(sk, index, MGMT_OP_UNSET_RSSI_REPORTER,
-					ENOTCONN);
-		goto failed;
-	}
-
-	hci_conn_unset_rssi_reporter(conn);
-
-failed:
-	hci_dev_unlock_bh(hdev);
-	hci_dev_put(hdev);
-
-	return err;
-}
-
 static int set_local_name(struct sock *sk, u16 index, unsigned char *data,
 								u16 len)
 {
@@ -1992,7 +1917,10 @@ void mgmt_inquiry_complete_evt(u16 index, u8 status)
 						sizeof(le_cp), &le_cp);
 		if (err >= 0) {
 			mod_timer(&hdev->disco_le_timer, jiffies +
-				msecs_to_jiffies(hdev->disco_int_phase * 1000));
+			
+                        
+                                msecs_to_jiffies(1000));
+                        
 			hdev->disco_state = SCAN_LE;
 		} else
 			hdev->disco_state = SCAN_IDLE;
@@ -2068,7 +1996,7 @@ void mgmt_disco_le_timeout(unsigned long data)
 			hci_send_cmd(hdev, HCI_OP_LE_SET_SCAN_ENABLE,
 					sizeof(le_cp), &le_cp);
 
-	/* re-start BR scan */
+	
 		if (hdev->disco_state != SCAN_IDLE) {
 			struct hci_cp_inquiry cp = {{0x33, 0x8b, 0x9e}, 4, 0};
 			hdev->disco_int_phase *= 2;
@@ -2109,23 +2037,21 @@ static int start_discovery(struct sock *sk, u16 index)
 		goto failed;
 	}
 
-	/* If LE Capable, we will alternate between BR/EDR and LE */
+	
 	if (lmp_le_capable(hdev)) {
 		struct hci_cp_le_set_scan_parameters le_cp;
 
-		/* Shorten BR scan params */
+		
 		cp.num_rsp = 1;
 		cp.length /= 2;
 
-		/* Setup LE scan params */
+		
 		memset(&le_cp, 0, sizeof(le_cp));
-		le_cp.type = 0x01;		/* Active scanning */
-		/* The recommended value for scan interval and window is
-		 * 11.25 msec. It is calculated by: time = n * 0.625 msec */
+		le_cp.type = 0x01;		
 		le_cp.interval = cpu_to_le16(0x0012);
 		le_cp.window = cpu_to_le16(0x0012);
-		le_cp.own_bdaddr_type = 0;	/* Public address */
-		le_cp.filter = 0;		/* Accept all adv packets */
+		le_cp.own_bdaddr_type = 0;	
+		le_cp.filter = 0;		
 
 		hci_send_cmd(hdev, HCI_OP_LE_SET_SCAN_PARAMETERS,
 						sizeof(le_cp), &le_cp);
@@ -2443,12 +2369,6 @@ int mgmt_control(struct sock *sk, struct msghdr *msg, size_t msglen)
 	case MGMT_OP_SET_CONNECTION_PARAMS:
 		err = set_connection_params(sk, index, buf + sizeof(*hdr), len);
 		break;
-	case MGMT_OP_SET_RSSI_REPORTER:
-		err = set_rssi_reporter(sk, index, buf + sizeof(*hdr), len);
-		break;
-	case MGMT_OP_UNSET_RSSI_REPORTER:
-		err = unset_rssi_reporter(sk, index, buf + sizeof(*hdr), len);
-		break;
 	case MGMT_OP_READ_LOCAL_OOB_DATA:
 		err = read_local_oob_data(sk, index);
 		break;
@@ -2756,11 +2676,8 @@ int mgmt_user_confirm_request(u16 index, u8 event,
 	if ((conn->auth_type & HCI_AT_DEDICATED_BONDING) &&
 			conn->auth_initiator && rem_cap == 0x03)
 		ev.auto_confirm = 1;
-	else if (loc_cap == 0x01 && (rem_cap == 0x00 || rem_cap == 0x03)) {
-		if (!loc_mitm && !rem_mitm)
-			value = 0;
+	else if (loc_cap == 0x01 && (rem_cap == 0x00 || rem_cap == 0x03))
 		goto no_auto_confirm;
-	}
 
 
 	if ((!loc_mitm || rem_cap == 0x03) && (!rem_mitm || loc_cap == 0x03))
@@ -2901,57 +2818,6 @@ int mgmt_read_local_oob_data_reply_complete(u16 index, u8 *hash, u8 *randomizer,
 	return err;
 }
 
-void mgmt_read_rssi_complete(u16 index, s8 rssi, bdaddr_t *bdaddr,
-		u16 handle, u8 status)
-{
-	struct mgmt_ev_rssi_update ev;
-	struct hci_conn *conn;
-	struct hci_dev *hdev;
-
-	if (status)
-		return;
-
-	hdev = hci_dev_get(index);
-	conn = hci_conn_hash_lookup_handle(hdev, handle);
-
-	if (!conn)
-		return;
-
-	BT_DBG("rssi_update_thresh_exceed : %d ",
-		   conn->rssi_update_thresh_exceed);
-	BT_DBG("RSSI Threshold : %d , recvd RSSI : %d ",
-			conn->rssi_threshold, rssi);
-
-	if (conn->rssi_update_thresh_exceed == 1) {
-		BT_DBG("rssi_update_thresh_exceed == 1");
-		if (rssi > conn->rssi_threshold) {
-			memset(&ev, 0, sizeof(ev));
-			bacpy(&ev.bdaddr, bdaddr);
-			ev.rssi = rssi;
-			mgmt_event(MGMT_EV_RSSI_UPDATE, index, &ev,
-				sizeof(ev), NULL);
-		} else {
-			hci_conn_set_rssi_reporter(conn, conn->rssi_threshold,
-				conn->rssi_update_interval,
-				conn->rssi_update_thresh_exceed);
-		}
-	} else {
-		BT_DBG("rssi_update_thresh_exceed == 0");
-		if (rssi < conn->rssi_threshold) {
-			memset(&ev, 0, sizeof(ev));
-			bacpy(&ev.bdaddr, bdaddr);
-			ev.rssi = rssi;
-			mgmt_event(MGMT_EV_RSSI_UPDATE, index, &ev,
-				sizeof(ev), NULL);
-		} else {
-			hci_conn_set_rssi_reporter(conn, conn->rssi_threshold,
-				conn->rssi_update_interval,
-				conn->rssi_update_thresh_exceed);
-		}
-	}
-}
-
-
 int mgmt_device_found(u16 index, bdaddr_t *bdaddr, u8 type, u8 le,
 			u8 *dev_class, s8 rssi, u8 eir_len, u8 *eir)
 {
@@ -2990,17 +2856,17 @@ int mgmt_device_found(u16 index, bdaddr_t *bdaddr, u8 type, u8 le,
 	hdev->disco_int_count++;
 
 	if (hdev->disco_int_count >= hdev->disco_int_phase) {
-		/* Inquiry scan for General Discovery LAP */
+		
 		struct hci_cp_inquiry cp = {{0x33, 0x8b, 0x9e}, 4, 0};
 		struct hci_cp_le_set_scan_enable le_cp = {0, 0};
 
 		hdev->disco_int_phase *= 2;
 		hdev->disco_int_count = 0;
 		if (hdev->disco_state == SCAN_LE) {
-			/* cancel LE scan */
+			
 			hci_send_cmd(hdev, HCI_OP_LE_SET_SCAN_ENABLE,
 					sizeof(le_cp), &le_cp);
-			/* start BR scan */
+			
 			cp.num_rsp = (u8) hdev->disco_int_phase;
 			hci_send_cmd(hdev, HCI_OP_INQUIRY,
 					sizeof(cp), &cp);

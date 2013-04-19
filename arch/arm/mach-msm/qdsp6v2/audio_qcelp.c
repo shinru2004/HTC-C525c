@@ -2,7 +2,7 @@
  *
  * Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,22 +19,12 @@
 
 #define FRAME_SIZE_DEC_QCELP  ((32) + sizeof(struct dec_meta_in))
 
-static void q6_audio_qcelp_cb(uint32_t opcode, uint32_t token,
-		uint32_t *payload, void *priv)
-{
-	struct q6audio_aio *audio = (struct q6audio_aio *)priv;
-
-	switch (opcode) {
-	case ASM_DATA_EVENT_WRITE_DONE:
-	case ASM_DATA_EVENT_READ_DONE:
-	case ASM_DATA_CMDRSP_EOS:
-		audio_aio_cb(opcode, token, payload, audio);
-		break;
-	default:
-		pr_debug("%s:Unhandled event = 0x%8x\n", __func__, opcode);
-		break;
-	}
-}
+#ifdef CONFIG_MACH_DUMMY
+#undef pr_info
+#undef pr_err
+#define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
+#define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+#endif
 
 #ifdef CONFIG_DEBUG_FS
 static const struct file_operations audio_qcelp_debug_fops = {
@@ -53,7 +43,7 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		pr_debug("%s[%p]: AUDIO_START session_id[%d]\n", __func__,
 						audio, audio->ac->session);
 		if (audio->feedback == NON_TUNNEL_MODE) {
-			/* Configure PCM output block */
+			
 			rc = q6asm_enc_cfg_blk_pcm(audio->ac,
 					audio->pcm_cfg.sample_rate,
 					audio->pcm_cfg.channel_count);
@@ -93,7 +83,7 @@ static int audio_open(struct inode *inode, struct file *file)
 	int rc = 0;
 
 #ifdef CONFIG_DEBUG_FS
-	/* 4 bytes represents decoder number, 1 byte for terminate string */
+	
 	char name[sizeof "msm_qcelp_" + 5];
 #endif
 	audio = kzalloc(sizeof(struct q6audio_aio), GFP_KERNEL);
@@ -103,9 +93,6 @@ static int audio_open(struct inode *inode, struct file *file)
 		return -ENOMEM;
 	}
 
-	/* Settings will be re-config at AUDIO_SET_CONFIG,
-	 * but at least we need to have initial config
-	 */
 	audio->str_cfg.buffer_size = FRAME_SIZE_DEC_QCELP;
 	audio->str_cfg.buffer_count = FRAME_NUM;
 	audio->pcm_cfg.buffer_size = PCM_BUFSZ_MIN;
@@ -113,7 +100,7 @@ static int audio_open(struct inode *inode, struct file *file)
 	audio->pcm_cfg.sample_rate = 8000;
 	audio->pcm_cfg.channel_count = 1;
 
-	audio->ac = q6asm_audio_client_alloc((app_cb) q6_audio_qcelp_cb,
+	audio->ac = q6asm_audio_client_alloc((app_cb) q6_audio_cb,
 					     (void *)audio);
 
 	if (!audio->ac) {
@@ -122,7 +109,7 @@ static int audio_open(struct inode *inode, struct file *file)
 		return -ENOMEM;
 	}
 
-	/* open in T/NT mode */
+	
 	if ((file->f_mode & FMODE_WRITE) && (file->f_mode & FMODE_READ)) {
 		rc = q6asm_open_read_write(audio->ac, FORMAT_LINEAR_PCM,
 					   FORMAT_V13K);

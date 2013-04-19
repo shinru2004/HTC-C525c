@@ -98,9 +98,6 @@ static int __devinit msm_spm_dev_init(struct msm_spm_device *dev,
 
 	for (i = 0; i < dev->num_modes; i++) {
 
-		/* Default offset is 0 and gets updated as we write more
-		 * sequences into SPM
-		 */
 		dev->modes[i].start_addr = offset;
 		ret = msm_spm_drv_write_seq_data(&dev->reg_data,
 						data->modes[i].cmd, &offset);
@@ -137,7 +134,7 @@ int msm_spm_turn_on_cpu_rail(unsigned int cpu)
 	reg = saw_bases[cpu];
 
 	if (cpu_is_msm8960() || cpu_is_msm8930() || cpu_is_msm8930aa() ||
-	    cpu_is_apq8064() || cpu_is_msm8627()) {
+	    cpu_is_apq8064() || cpu_is_msm8627() || cpu_is_apq8064ab()) {
 		val = 0xA4;
 		reg += 0x14;
 		timeout = 512;
@@ -168,7 +165,6 @@ int msm_spm_set_low_power_mode(unsigned int mode, bool notify_rpm)
 }
 EXPORT_SYMBOL(msm_spm_set_low_power_mode);
 
-/* Board file init function */
 int __init msm_spm_init(struct msm_spm_platform_data *data, int nr_devs)
 {
 	unsigned int cpu;
@@ -216,7 +212,6 @@ int msm_spm_apcs_set_phase(unsigned int phase_cnt)
 }
 EXPORT_SYMBOL(msm_spm_apcs_set_phase);
 
-/* Board file init function */
 int __init msm_spm_l2_init(struct msm_spm_platform_data *data)
 {
 	return msm_spm_dev_init(&msm_spm_l2_device, data);
@@ -267,14 +262,22 @@ static int __devinit msm_spm_dev_probe(struct platform_device *pdev)
 		uint32_t notify_rpm;
 	};
 
-	struct mode_of mode_of_data[] = {
-		{"qcom,spm-cmd-wfi", MSM_SPM_MODE_CLOCK_GATING, 0},
-		{"qcom,spm-cmd-ret", MSM_SPM_MODE_POWER_RETENTION, 0},
-		{"qcom,spm-cmd-spc", MSM_SPM_MODE_POWER_COLLAPSE, 0},
-		{"qcom,spm-cmd-pc", MSM_SPM_MODE_POWER_COLLAPSE, 1},
+	struct mode_of of_cpu_modes[] = {
+		{"qcom,saw2-spm-cmd-wfi", MSM_SPM_MODE_CLOCK_GATING, 0},
+		{"qcom,saw2-spm-cmd-ret", MSM_SPM_MODE_POWER_RETENTION, 0},
+		{"qcom,saw2-spm-cmd-spc", MSM_SPM_MODE_POWER_COLLAPSE, 0},
+		{"qcom,saw2-spm-cmd-pc", MSM_SPM_MODE_POWER_COLLAPSE, 1},
 	};
 
-	BUG_ON(ARRAY_SIZE(mode_of_data) > MSM_SPM_MODE_NR);
+	struct mode_of of_l2_modes[] = {
+		{"qcom,saw2-spm-cmd-ret", MSM_SPM_L2_MODE_RETENTION, 1},
+		{"qcom,saw2-spm-cmd-gdhs", MSM_SPM_L2_MODE_GDHS, 1},
+		{"qcom,saw2-spm-cmd-pc", MSM_SPM_L2_MODE_POWER_COLLAPSE, 1},
+	};
+
+	struct mode_of *mode_of_data;
+	int num_modes;
+
 	memset(&spm_data, 0, sizeof(struct msm_spm_platform_data));
 	memset(&modes, 0,
 		(MSM_SPM_MODE_NR - 2) * sizeof(struct msm_spm_seq_entry));
@@ -305,13 +308,13 @@ static int __devinit msm_spm_dev_probe(struct platform_device *pdev)
 	if (!ret)
 		spm_data.vctl_timeout_us = val;
 
-	/* optional */
+	
 	key = "qcom,vctl-port";
 	ret = of_property_read_u32(node, key, &val);
 	if (!ret)
 		spm_data.vctl_port = val;
 
-	/* optional */
+	
 	key = "qcom,phase-port";
 	ret = of_property_read_u32(node, key, &val);
 	if (!ret)
@@ -324,7 +327,18 @@ static int __devinit msm_spm_dev_probe(struct platform_device *pdev)
 		spm_data.reg_init_values[spm_of_data[i].id] = val;
 	}
 
-	for (i = 0; i < ARRAY_SIZE(mode_of_data); i++) {
+	if (cpu >= 0 && cpu < num_possible_cpus()) {
+		mode_of_data = of_cpu_modes;
+		num_modes = ARRAY_SIZE(of_cpu_modes);
+		dev = &per_cpu(msm_cpu_spm_device, cpu);
+
+	} else {
+		mode_of_data = of_l2_modes;
+		num_modes = ARRAY_SIZE(of_l2_modes);
+		dev = &msm_spm_l2_device;
+	}
+
+	for (i = 0; i < num_modes; i++) {
 		key = mode_of_data[i].key;
 		modes[mode_count].cmd =
 			(uint8_t *)of_get_property(node, key, &len);
@@ -338,16 +352,8 @@ static int __devinit msm_spm_dev_probe(struct platform_device *pdev)
 	spm_data.modes = modes;
 	spm_data.num_modes = mode_count;
 
-	/*
-	 * Device with id 0..NR_CPUS are SPM for apps cores
-	 * Device with id 0xFFFF is for L2 SPM.
-	 */
-	if (cpu >= 0 && cpu < num_possible_cpus())
-		dev = &per_cpu(msm_cpu_spm_device, cpu);
-	else
-		dev = &msm_spm_l2_device;
-
 	ret = msm_spm_dev_init(dev, &spm_data);
+
 	if (ret < 0)
 		pr_warn("%s():failed core-id:%u ret:%d\n", __func__, cpu, ret);
 

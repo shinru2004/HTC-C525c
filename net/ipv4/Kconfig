@@ -163,8 +163,6 @@ config IP_PNP_RARP
 	  operating on your network. Read
 	  <file:Documentation/filesystems/nfs/nfsroot.txt> for details.
 
-# not yet ready..
-#   bool '    IP: ARP support' CONFIG_IP_PNP_ARP
 config NET_IPIP
 	tristate "IP: tunneling"
 	select INET_TUNNEL
@@ -223,12 +221,6 @@ config IP_MROUTE
 	  capabilities of the various network cards is contained in
 	  <file:Documentation/networking/multicast.txt>. If you haven't heard
 	  about it, you don't need it.
-
-config LARGE_TCP_INITIAL_BUFFER
-	bool "TCP: initial TCP buffer size 5K:64K"
-	default y
-	help
-	yes means TCP buffer size 5K
 
 config IP_MROUTE_MULTIPLE_TABLES
 	bool "IP: multicast policy routing"
@@ -414,6 +406,14 @@ config INET_DIAG
 config INET_TCP_DIAG
 	depends on INET_DIAG
 	def_tristate INET_DIAG
+
+config INET_UDP_DIAG
+	tristate "UDP: socket monitoring interface"
+	depends on INET_DIAG && (IPV6 || IPV6=n)
+	default n
+	---help---
+	  Support for UDP socket monitoring interface used by the ss tool.
+	  If unsure, say Y.
 
 menuconfig TCP_CONG_ADVANCED
 	bool "TCP: advanced congestion control"
@@ -636,4 +636,15 @@ config HTC_NETWORK_MODIFY
 	---help---
 	HTC_NETWORK_MODIFY
 
+config HTC_NETWORK_DEBUG
+	tristate "HTC_NETWORK_DEBUG"
+	default n
+	---help---
+	HTC_NETWORK_DEBUG
 
+config HTC_MONITOR
+	tristate "HTC_MONITOR"
+	default n
+	---help---
+	  Come up with a way to add information of data usage in attribute file
+	  for identifying the process that requested for data transmission.

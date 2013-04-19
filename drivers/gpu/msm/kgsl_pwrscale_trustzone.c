@@ -11,6 +11,7 @@
  *
  */
 
+#include <linux/export.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/io.h>
@@ -21,6 +22,7 @@
 #include "kgsl.h"
 #include "kgsl_pwrscale.h"
 #include "kgsl_device.h"
+#include "kgsl_trace.h"
 
 #define TZ_GOVERNOR_PERFORMANCE 0
 #define TZ_GOVERNOR_ONDEMAND    1
@@ -64,7 +66,6 @@ spinlock_t tz_lock;
 #define PARAM_INDEX_READ_ALGORITHM 209
 
 #ifdef CONFIG_MSM_SCM
-/* Trap into the TrustZone, and call funcs there. */
 static int __secure_tz_entry(u32 cmd, u32 val, u32 id)
 {
 	int ret;
@@ -79,7 +80,7 @@ static int __secure_tz_entry(u32 cmd, u32 val, u32 id)
 {
 	return 0;
 }
-#endif /* CONFIG_MSM_SCM */
+#endif 
 
 static ssize_t tz_governor_show(struct kgsl_device *device,
 				struct kgsl_pwrscale *pwrscale,
@@ -137,7 +138,7 @@ static ssize_t dcvs_downthreshold_show(struct kgsl_device *device,
 
 static ssize_t dcvs_downthreshold_store(struct kgsl_device *device,
 				struct kgsl_pwrscale *pwrscale,
-				 const char *buf, size_t count)
+				const char *buf, size_t count)
 {
 	int val, ret;
 
@@ -165,7 +166,7 @@ static ssize_t dcvs_upthreshold_show(struct kgsl_device *device,
 
 static ssize_t dcvs_upthreshold_store(struct kgsl_device *device,
 				struct kgsl_pwrscale *pwrscale,
-				 const char *buf, size_t count)
+				const char *buf, size_t count)
 {
 	int val, ret;
 
@@ -193,7 +194,7 @@ static ssize_t dcvs_down_count_show(struct kgsl_device *device,
 
 static ssize_t dcvs_down_count_store(struct kgsl_device *device,
 				struct kgsl_pwrscale *pwrscale,
-				 const char *buf, size_t count)
+				const char *buf, size_t count)
 {
 	int val, ret;
 
@@ -221,7 +222,7 @@ static ssize_t dcvs_numgaps_show(struct kgsl_device *device,
 
 static ssize_t dcvs_numgaps_store(struct kgsl_device *device,
 				struct kgsl_pwrscale *pwrscale,
-				 const char *buf, size_t count)
+				const char *buf, size_t count)
 {
 	int val, ret;
 
@@ -249,7 +250,7 @@ static ssize_t dcvs_init_idle_vector_show(struct kgsl_device *device,
 
 static ssize_t dcvs_init_idle_vector_store(struct kgsl_device *device,
 				struct kgsl_pwrscale *pwrscale,
-				 const char *buf, size_t count)
+				const char *buf, size_t count)
 {
 	int val, ret;
 
@@ -304,8 +305,8 @@ static ssize_t dcvs_upthreshold_percent_show(struct kgsl_device *device,
 }
 
 static ssize_t dcvs_upthreshold_percent_store(struct kgsl_device *device,
-					struct kgsl_pwrscale *pwrscale,
-					const char *buf, size_t count)
+				struct kgsl_pwrscale *pwrscale,
+				const char *buf, size_t count)
 {
 	int val, ret;
 
@@ -332,8 +333,8 @@ static ssize_t dcvs_downthreshold_percent_show(struct kgsl_device *device,
 }
 
 static ssize_t dcvs_downthreshold_percent_store(struct kgsl_device *device,
-					struct kgsl_pwrscale *pwrscale,
-					const char *buf, size_t count)
+				struct kgsl_pwrscale *pwrscale,
+				const char *buf, size_t count)
 {
 	int val, ret;
 
@@ -348,8 +349,8 @@ static ssize_t dcvs_downthreshold_percent_store(struct kgsl_device *device,
 }
 
 static ssize_t dcvs_upthreshold_count_show(struct kgsl_device *device,
-					struct kgsl_pwrscale *pwrscale,
-					char *buf)
+				struct kgsl_pwrscale *pwrscale,
+				char *buf)
 {
 	int val, ret;
 	val = __secure_tz_entry(TZ_CMD_ID, 0, PARAM_INDEX_READ_UPTHRESHOLD_COUNT);
@@ -360,8 +361,8 @@ static ssize_t dcvs_upthreshold_count_show(struct kgsl_device *device,
 }
 
 static ssize_t dcvs_upthreshold_count_store(struct kgsl_device *device,
-					struct kgsl_pwrscale *pwrscale,
-					const char *buf, size_t count)
+				struct kgsl_pwrscale *pwrscale,
+				const char *buf, size_t count)
 {
 	int val, ret;
 
@@ -376,8 +377,8 @@ static ssize_t dcvs_upthreshold_count_store(struct kgsl_device *device,
 }
 
 static ssize_t dcvs_downthreshold_count_show(struct kgsl_device *device,
-					struct kgsl_pwrscale *pwrscale,
-					char *buf)
+				struct kgsl_pwrscale *pwrscale,
+				char *buf)
 {
 	int val, ret;
 	val = __secure_tz_entry(TZ_CMD_ID, 0, PARAM_INDEX_READ_DOWNTHRESHOLD_COUNT);
@@ -388,8 +389,8 @@ static ssize_t dcvs_downthreshold_count_show(struct kgsl_device *device,
 }
 
 static ssize_t dcvs_downthreshold_count_store(struct kgsl_device *device,
-					struct kgsl_pwrscale *pwrscale,
-					const char *buf, size_t count)
+				struct kgsl_pwrscale *pwrscale,
+				const char *buf, size_t count)
 {
 	int val, ret;
 
@@ -403,7 +404,6 @@ static ssize_t dcvs_downthreshold_count_store(struct kgsl_device *device,
 	return count;
 }
 
-
 PWRSCALE_POLICY_ATTR(governor, 0644, tz_governor_show, tz_governor_store);
 PWRSCALE_POLICY_ATTR(dcvs_downthreshold, 0644, dcvs_downthreshold_show, dcvs_downthreshold_store);
 PWRSCALE_POLICY_ATTR(dcvs_upthreshold, 0644, dcvs_upthreshold_show, dcvs_upthreshold_store);
@@ -415,7 +415,6 @@ PWRSCALE_POLICY_ATTR(dcvs_upthreshold_percent, 0644, dcvs_upthreshold_percent_sh
 PWRSCALE_POLICY_ATTR(dcvs_downthreshold_percent, 0644, dcvs_downthreshold_percent_show, dcvs_downthreshold_percent_store);
 PWRSCALE_POLICY_ATTR(dcvs_upthreshold_count, 0644, dcvs_upthreshold_count_show, dcvs_upthreshold_count_store);
 PWRSCALE_POLICY_ATTR(dcvs_downthreshold_count, 0644, dcvs_downthreshold_count_show, dcvs_downthreshold_count_store);
-
 
 static struct attribute *tz_attrs[] = {
 	&policy_attr_governor.attr,
@@ -440,9 +439,12 @@ static void tz_wake(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 {
 	struct tz_priv *priv = pwrscale->priv;
 	if (device->state != KGSL_STATE_NAP &&
-		priv->governor == TZ_GOVERNOR_ONDEMAND)
+		priv->governor == TZ_GOVERNOR_ONDEMAND) {
+		trace_kgsl_pwrlevel(device, device->pwrctrl.default_pwrlevel,
+			device->pwrctrl.pwrlevels[device->pwrctrl.default_pwrlevel].gpu_freq);
 		kgsl_pwrctrl_pwrlevel_change(device,
 					device->pwrctrl.default_pwrlevel);
+	}
 }
 
 static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
@@ -452,8 +454,6 @@ static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 	struct kgsl_power_stats stats;
 	int val, idle, total_time;
 
-	/* In "performance" mode the clock speed always stays
-	   the same */
 
 	if (priv->governor == TZ_GOVERNOR_PERFORMANCE)
 		return;
@@ -462,8 +462,6 @@ static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 	if (stats.total_time == 0)
 		return;
 
-	/* If the GPU has stayed in turbo mode for a while, *
-	 * stop writing out values. */
 	if (pwr->active_pwrlevel == 0) {
 		if (priv->no_switch_cnt > SWITCH_OFF) {
 			priv->skip_cnt++;
@@ -481,7 +479,7 @@ static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 	idle = stats.total_time - stats.busy_time;
 	idle = (idle > 0) ? idle : 0;
 
-	//using highest 4 bits as current power level in 2nd parameter of trustzone api. Lowest 28 bits as total time.
+	
 	total_time = stats.total_time & 0x0FFFFFFF;
 	total_time |= (pwr->active_pwrlevel) << 28;
 
@@ -503,6 +501,8 @@ static void tz_sleep(struct kgsl_device *device,
 {
 	struct tz_priv *priv = pwrscale->priv;
 
+	trace_kgsl_pwrlevel(device, 0, 0);
+
 	__secure_tz_entry(TZ_RESET_ID, 0, device->id);
 	priv->no_switch_cnt = 0;
 }
@@ -512,7 +512,7 @@ static int tz_init(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 	struct tz_priv *priv;
 	int ret;
 
-	/* Trustzone is only valid for some SOCs */
+	
 	if (!(cpu_is_msm8x60() || cpu_is_msm8960() || cpu_is_apq8064() ||
 		cpu_is_msm8930() || cpu_is_msm8930aa() || cpu_is_msm8627()))
 		return -EINVAL;

@@ -11,7 +11,6 @@
 
 #include "trace_output.h"
 
-/* must be a power of 2 */
 #define EVENT_HASHSIZE	128
 
 DECLARE_RWSEM(trace_event_mutex);
@@ -27,10 +26,6 @@ int trace_print_seq(struct seq_file *m, struct trace_seq *s)
 
 	ret = seq_write(m, s->buffer, len);
 
-	/*
-	 * Only reset this buffer if we successfully wrote to the
-	 * seq_file buffer.
-	 */
 	if (!ret)
 		trace_seq_init(s);
 
@@ -69,20 +64,6 @@ enum print_line_t trace_print_printk_msg_only(struct trace_iterator *iter)
 	return TRACE_TYPE_HANDLED;
 }
 
-/**
- * trace_seq_printf - sequence printing of trace information
- * @s: trace sequence descriptor
- * @fmt: printf format string
- *
- * It returns 0 if the trace oversizes the buffer's free
- * space, 1 otherwise.
- *
- * The tracer may use either sequence operations or its own
- * copy to user routines. To simplify formating of a trace
- * trace_seq_printf is used to store strings into a special
- * buffer (@s). Then the output may be either used by
- * the sequencer or pulled into another buffer.
- */
 int
 trace_seq_printf(struct trace_seq *s, const char *fmt, ...)
 {
@@ -97,7 +78,7 @@ trace_seq_printf(struct trace_seq *s, const char *fmt, ...)
 	ret = vsnprintf(s->buffer + s->len, len, fmt, ap);
 	va_end(ap);
 
-	/* If we can't write it all, don't bother writing anything */
+	
 	if (ret >= len) {
 		s->full = 1;
 		return 0;
@@ -109,17 +90,6 @@ trace_seq_printf(struct trace_seq *s, const char *fmt, ...)
 }
 EXPORT_SYMBOL_GPL(trace_seq_printf);
 
-/**
- * trace_seq_vprintf - sequence printing of trace information
- * @s: trace sequence descriptor
- * @fmt: printf format string
- *
- * The tracer may use either sequence operations or its own
- * copy to user routines. To simplify formating of a trace
- * trace_seq_printf is used to store strings into a special
- * buffer (@s). Then the output may be either used by
- * the sequencer or pulled into another buffer.
- */
 int
 trace_seq_vprintf(struct trace_seq *s, const char *fmt, va_list args)
 {
@@ -131,7 +101,7 @@ trace_seq_vprintf(struct trace_seq *s, const char *fmt, va_list args)
 
 	ret = vsnprintf(s->buffer + s->len, len, fmt, args);
 
-	/* If we can't write it all, don't bother writing anything */
+	
 	if (ret >= len) {
 		s->full = 1;
 		return 0;
@@ -153,7 +123,7 @@ int trace_seq_bprintf(struct trace_seq *s, const char *fmt, const u32 *binary)
 
 	ret = bstr_printf(s->buffer + s->len, len, fmt, binary);
 
-	/* If we can't write it all, don't bother writing anything */
+	
 	if (ret >= len) {
 		s->full = 1;
 		return 0;
@@ -164,16 +134,6 @@ int trace_seq_bprintf(struct trace_seq *s, const char *fmt, const u32 *binary)
 	return len;
 }
 
-/**
- * trace_seq_puts - trace sequence printing of simple string
- * @s: trace sequence descriptor
- * @str: simple string to record
- *
- * The tracer may use either the sequence operations or its own
- * copy to user routines. This function records a simple string
- * into a special buffer (@s) for later retrieval by a sequencer
- * or other mechanism.
- */
 int trace_seq_puts(struct trace_seq *s, const char *str)
 {
 	int len = strlen(str);
@@ -264,7 +224,7 @@ void *trace_seq_reserve(struct trace_seq *s, size_t len)
 	return ret;
 }
 
-int trace_seq_path(struct trace_seq *s, struct path *path)
+int trace_seq_path(struct trace_seq *s, const struct path *path)
 {
 	unsigned char *p;
 
@@ -300,7 +260,7 @@ ftrace_print_flags_seq(struct trace_seq *p, const char *delim,
 	unsigned long mask;
 	const char *str;
 	const char *ret = p->buffer + p->len;
-	int i;
+	int i, first = 1;
 
 	for (i = 0;  flag_array[i].name && flags; i++) {
 
@@ -310,14 +270,16 @@ ftrace_print_flags_seq(struct trace_seq *p, const char *delim,
 
 		str = flag_array[i].name;
 		flags &= ~mask;
-		if (p->len && delim)
+		if (!first && delim)
 			trace_seq_puts(p, delim);
+		else
+			first = 0;
 		trace_seq_puts(p, str);
 	}
 
-	/* check for left over flags */
+	
 	if (flags) {
-		if (p->len && delim)
+		if (!first && delim)
 			trace_seq_puts(p, delim);
 		trace_seq_printf(p, "0x%lx", flags);
 	}
@@ -344,7 +306,7 @@ ftrace_print_symbols_seq(struct trace_seq *p, unsigned long val,
 		break;
 	}
 
-	if (!p->len)
+	if (ret == (const char *)(p->buffer + p->len))
 		trace_seq_printf(p, "0x%lx", val);
 		
 	trace_seq_putc(p, 0);
@@ -370,7 +332,7 @@ ftrace_print_symbols_seq_u64(struct trace_seq *p, unsigned long long val,
 		break;
 	}
 
-	if (!p->len)
+	if (ret == (const char *)(p->buffer + p->len))
 		trace_seq_printf(p, "0x%llx", val);
 
 	trace_seq_putc(p, 0);
@@ -410,7 +372,7 @@ static inline const char *kretprobed(const char *name)
 {
 	return name;
 }
-#endif /* CONFIG_KRETPROBES */
+#endif 
 
 static int
 seq_print_sym_short(struct trace_seq *s, const char *fmt, unsigned long address)
@@ -492,10 +454,6 @@ seq_print_userip_objs(const struct userstack_entry *entry, struct trace_seq *s,
 
 	if (trace_flags & TRACE_ITER_SYM_USEROBJ) {
 		struct task_struct *task;
-		/*
-		 * we do the lookup on the thread group leader,
-		 * since individual threads might have already quit!
-		 */
 		rcu_read_lock();
 		task = find_task_by_vpid(entry->tgid);
 		if (task)
@@ -550,14 +508,6 @@ seq_print_ip_sym(struct trace_seq *s, unsigned long ip, unsigned long sym_flags)
 	return ret;
 }
 
-/**
- * trace_print_lat_fmt - print the irq, preempt and lockdep fields
- * @s: trace seq struct to write to
- * @entry: The trace entry field from the ring buffer
- *
- * Prints the generic fields of irqs off, in hard or softirq, preempt
- * count.
- */
 int trace_print_lat_fmt(struct trace_seq *s, struct trace_entry *entry)
 {
 	char hardsoft_irq;
@@ -627,17 +577,31 @@ int trace_print_context(struct trace_iterator *iter)
 	unsigned long usec_rem = do_div(t, USEC_PER_SEC);
 	unsigned long secs = (unsigned long)t;
 	char comm[TASK_COMM_LEN];
+	int ret;
 
 	trace_find_cmdline(entry->pid, comm);
 
-	return trace_seq_printf(s, "%16s-%-5d [%03d] %5lu.%06lu: ",
-				comm, entry->pid, iter->cpu, secs, usec_rem);
+	ret = trace_seq_printf(s, "%16s-%-5d [%03d] ",
+			       comm, entry->pid, iter->cpu);
+	if (!ret)
+		return 0;
+
+	if (trace_flags & TRACE_ITER_IRQ_INFO) {
+		ret = trace_print_lat_fmt(s, entry);
+		if (!ret)
+			return 0;
+	}
+
+	return trace_seq_printf(s, " %5lu.%06lu: ",
+				secs, usec_rem);
 }
 
 int trace_print_lat_context(struct trace_iterator *iter)
 {
 	u64 next_ts;
 	int ret;
+	
+	int ent_size = iter->ent_size;
 	struct trace_seq *s = &iter->seq;
 	struct trace_entry *entry = iter->ent,
 			   *next_entry = trace_find_next_entry(iter, NULL,
@@ -645,6 +609,9 @@ int trace_print_lat_context(struct trace_iterator *iter)
 	unsigned long verbose = (trace_flags & TRACE_ITER_VERBOSE);
 	unsigned long abs_usecs = ns2usecs(iter->ts - iter->tr->time_start);
 	unsigned long rel_usecs;
+
+	
+	iter->ent_size = ent_size;
 
 	if (!next_entry)
 		next_ts = iter->ts;
@@ -682,13 +649,6 @@ static int task_state_char(unsigned long state)
 	return bit < sizeof(state_to_char) - 1 ? state_to_char[bit] : '?';
 }
 
-/**
- * ftrace_find_event - find a registered event
- * @type: the type of event to look for
- *
- * Returns an event of type @type otherwise NULL
- * Called with trace_event_read_lock() held.
- */
 struct trace_event *ftrace_find_event(int type)
 {
 	struct trace_event *event;
@@ -717,17 +677,13 @@ static int trace_search_list(struct list_head **list)
 		return last + 1;
 	}
 
-	/*
-	 * We used up all possible max events,
-	 * lets see if somebody freed one.
-	 */
 	list_for_each_entry(e, &ftrace_event_list, list) {
 		if (e->type != last + 1)
 			break;
 		last++;
 	}
 
-	/* Did we used up all 65 thousand events??? */
+	
 	if ((last + 1) > FTRACE_MAX_EVENT)
 		return 0;
 
@@ -745,21 +701,6 @@ void trace_event_read_unlock(void)
 	up_read(&trace_event_mutex);
 }
 
-/**
- * register_ftrace_event - register output for an event type
- * @event: the event type to register
- *
- * Event types are stored in a hash and this hash is used to
- * find a way to print an event. If the @event->type is set
- * then it will use that type, otherwise it will assign a
- * type to use.
- *
- * If you assign your own type, please make sure it is added
- * to the trace_type enum in trace.h, to avoid collisions
- * with the dynamic types.
- *
- * Returns the event type number or zero on error.
- */
 int register_ftrace_event(struct trace_event *event)
 {
 	unsigned key;
@@ -800,7 +741,7 @@ int register_ftrace_event(struct trace_event *event)
 		WARN_ON(1);
 		goto out;
 	} else {
-		/* Is this event already used */
+		
 		if (ftrace_find_event(event->type))
 			goto out;
 	}
@@ -826,9 +767,6 @@ int register_ftrace_event(struct trace_event *event)
 }
 EXPORT_SYMBOL_GPL(register_ftrace_event);
 
-/*
- * Used by module code with the trace_event_mutex held for write.
- */
 int __unregister_ftrace_event(struct trace_event *event)
 {
 	hlist_del(&event->node);
@@ -836,10 +774,6 @@ int __unregister_ftrace_event(struct trace_event *event)
 	return 0;
 }
 
-/**
- * unregister_ftrace_event - remove a no longer used event
- * @event: the event to remove
- */
 int unregister_ftrace_event(struct trace_event *event)
 {
 	down_write(&trace_event_mutex);
@@ -850,9 +784,6 @@ int unregister_ftrace_event(struct trace_event *event)
 }
 EXPORT_SYMBOL_GPL(unregister_ftrace_event);
 
-/*
- * Standard events
- */
 
 enum print_line_t trace_nop_print(struct trace_iterator *iter, int flags,
 				  struct trace_event *event)
@@ -863,7 +794,6 @@ enum print_line_t trace_nop_print(struct trace_iterator *iter, int flags,
 	return TRACE_TYPE_HANDLED;
 }
 
-/* TRACE_FN */
 static enum print_line_t trace_fn_trace(struct trace_iterator *iter, int flags,
 					struct trace_event *event)
 {
@@ -947,7 +877,6 @@ static struct trace_event trace_fn_event = {
 	.funcs		= &trace_fn_funcs,
 };
 
-/* TRACE_CTX an TRACE_WAKE */
 static enum print_line_t trace_ctxwake_print(struct trace_iterator *iter,
 					     char *delim)
 {
@@ -1100,26 +1029,26 @@ static struct trace_event trace_wake_event = {
 	.funcs		= &trace_wake_funcs,
 };
 
-/* TRACE_STACK */
 
 static enum print_line_t trace_stack_print(struct trace_iterator *iter,
 					   int flags, struct trace_event *event)
 {
 	struct stack_entry *field;
 	struct trace_seq *s = &iter->seq;
-	int i;
+	unsigned long *p;
+	unsigned long *end;
 
 	trace_assign_type(field, iter->ent);
+	end = (unsigned long *)((long)iter->ent + iter->ent_size);
 
 	if (!trace_seq_puts(s, "<stack trace>\n"))
 		goto partial;
-	for (i = 0; i < FTRACE_STACK_ENTRIES; i++) {
-		if (!field->caller[i] || (field->caller[i] == ULONG_MAX))
-			break;
+
+	for (p = field->caller; p && *p != ULONG_MAX && p < end; p++) {
 		if (!trace_seq_puts(s, " => "))
 			goto partial;
 
-		if (!seq_print_ip_sym(s, field->caller[i], flags))
+		if (!seq_print_ip_sym(s, *p, flags))
 			goto partial;
 		if (!trace_seq_puts(s, "\n"))
 			goto partial;
@@ -1140,7 +1069,6 @@ static struct trace_event trace_stack_event = {
 	.funcs		= &trace_stack_funcs,
 };
 
-/* TRACE_USER_STACK */
 static enum print_line_t trace_user_stack_print(struct trace_iterator *iter,
 						int flags, struct trace_event *event)
 {
@@ -1170,7 +1098,6 @@ static struct trace_event trace_user_stack_event = {
 	.funcs		= &trace_user_stack_funcs,
 };
 
-/* TRACE_BPRINT */
 static enum print_line_t
 trace_bprint_print(struct trace_iterator *iter, int flags,
 		   struct trace_event *event)
@@ -1228,7 +1155,6 @@ static struct trace_event trace_bprint_event = {
 	.funcs		= &trace_bprint_funcs,
 };
 
-/* TRACE_PRINT */
 static enum print_line_t trace_print_print(struct trace_iterator *iter,
 					   int flags, struct trace_event *event)
 {

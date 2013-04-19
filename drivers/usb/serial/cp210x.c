@@ -49,9 +49,10 @@ static int cp210x_tiocmset_port(struct usb_serial_port *port,
 		unsigned int, unsigned int);
 static void cp210x_break_ctl(struct tty_struct *, int);
 static int cp210x_startup(struct usb_serial *);
+static void cp210x_release(struct usb_serial *);
 static void cp210x_dtr_rts(struct usb_serial_port *p, int on);
 
-static int debug;
+static bool debug;
 
 static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x045B, 0x0053) }, /* Renesas RX610 RX-Stick */
@@ -81,6 +82,7 @@ static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x10C4, 0x8066) }, /* Argussoft In-System Programmer */
 	{ USB_DEVICE(0x10C4, 0x806F) }, /* IMS USB to RS422 Converter Cable */
 	{ USB_DEVICE(0x10C4, 0x807A) }, /* Crumb128 board */
+	{ USB_DEVICE(0x10C4, 0x80C4) }, /* Cygnal Integrated Products, Inc., Optris infrared thermometer */
 	{ USB_DEVICE(0x10C4, 0x80CA) }, /* Degree Controls Inc */
 	{ USB_DEVICE(0x10C4, 0x80DD) }, /* Tracient RFID */
 	{ USB_DEVICE(0x10C4, 0x80F6) }, /* Suunto sports instrument */
@@ -91,6 +93,7 @@ static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x10C4, 0x814B) }, /* West Mountain Radio RIGtalk */
 	{ USB_DEVICE(0x10C4, 0x8156) }, /* B&G H3000 link cable */
 	{ USB_DEVICE(0x10C4, 0x815E) }, /* Helicomm IP-Link 1220-DVM */
+	{ USB_DEVICE(0x10C4, 0x815F) }, /* Timewave HamLinkUSB */
 	{ USB_DEVICE(0x10C4, 0x818B) }, /* AVIT Research USB to TTL */
 	{ USB_DEVICE(0x10C4, 0x819F) }, /* MJS USB Toslink Switcher */
 	{ USB_DEVICE(0x10C4, 0x81A6) }, /* ThinkOptics WavIt */
@@ -121,6 +124,8 @@ static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x10C4, 0x8665) }, /* AC-Services OBD-IF */
 	{ USB_DEVICE(0x10C4, 0xEA60) }, /* Silicon Labs factory default */
 	{ USB_DEVICE(0x10C4, 0xEA61) }, /* Silicon Labs factory default */
+	{ USB_DEVICE(0x10C4, 0xEA70) }, /* Silicon Labs factory default */
+	{ USB_DEVICE(0x10C4, 0xEA80) }, /* Silicon Labs factory default */
 	{ USB_DEVICE(0x10C4, 0xEA71) }, /* Infinity GPS-MIC-1 Radio Monophone */
 	{ USB_DEVICE(0x10C4, 0xF001) }, /* Elan Digital Systems USBscope50 */
 	{ USB_DEVICE(0x10C4, 0xF002) }, /* Elan Digital Systems USBwave12 */
@@ -130,29 +135,44 @@ static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x10CE, 0xEA6A) }, /* Silicon Labs MobiData GPRS USB Modem 100EU */
 	{ USB_DEVICE(0x13AD, 0x9999) }, /* Baltech card reader */
 	{ USB_DEVICE(0x1555, 0x0004) }, /* Owen AC4 USB-RS485 Converter */
+	{ USB_DEVICE(0x166A, 0x0201) }, /* Clipsal 5500PACA C-Bus Pascal Automation Controller */
+	{ USB_DEVICE(0x166A, 0x0301) }, /* Clipsal 5800PC C-Bus Wireless PC Interface */
 	{ USB_DEVICE(0x166A, 0x0303) }, /* Clipsal 5500PCU C-Bus USB interface */
+	{ USB_DEVICE(0x166A, 0x0304) }, /* Clipsal 5000CT2 C-Bus Black and White Touchscreen */
+	{ USB_DEVICE(0x166A, 0x0305) }, /* Clipsal C-5000CT2 C-Bus Spectrum Colour Touchscreen */
+	{ USB_DEVICE(0x166A, 0x0401) }, /* Clipsal L51xx C-Bus Architectural Dimmer */
+	{ USB_DEVICE(0x166A, 0x0101) }, /* Clipsal 5560884 C-Bus Multi-room Audio Matrix Switcher */
 	{ USB_DEVICE(0x16D6, 0x0001) }, /* Jablotron serial interface */
 	{ USB_DEVICE(0x16DC, 0x0010) }, /* W-IE-NE-R Plein & Baus GmbH PL512 Power Supply */
 	{ USB_DEVICE(0x16DC, 0x0011) }, /* W-IE-NE-R Plein & Baus GmbH RCM Remote Control for MARATON Power Supply */
 	{ USB_DEVICE(0x16DC, 0x0012) }, /* W-IE-NE-R Plein & Baus GmbH MPOD Multi Channel Power Supply */
 	{ USB_DEVICE(0x16DC, 0x0015) }, /* W-IE-NE-R Plein & Baus GmbH CML Control, Monitoring and Data Logger */
+	{ USB_DEVICE(0x17A8, 0x0001) }, /* Kamstrup Optical Eye/3-wire */
+	{ USB_DEVICE(0x17A8, 0x0005) }, /* Kamstrup M-Bus Master MultiPort 250D */
 	{ USB_DEVICE(0x17F4, 0xAAAA) }, /* Wavesense Jazz blood glucose meter */
 	{ USB_DEVICE(0x1843, 0x0200) }, /* Vaisala USB Instrument Cable */
 	{ USB_DEVICE(0x18EF, 0xE00F) }, /* ELV USB-I2C-Interface */
 	{ USB_DEVICE(0x1BE3, 0x07A6) }, /* WAGO 750-923 USB Service Cable */
+	{ USB_DEVICE(0x1E29, 0x0102) }, /* Festo CPX-USB */
+	{ USB_DEVICE(0x1E29, 0x0501) }, /* Festo CMSP */
 	{ USB_DEVICE(0x3195, 0xF190) }, /* Link Instruments MSO-19 */
+	{ USB_DEVICE(0x3195, 0xF280) }, /* Link Instruments MSO-28 */
+	{ USB_DEVICE(0x3195, 0xF281) }, /* Link Instruments MSO-28 */
 	{ USB_DEVICE(0x413C, 0x9500) }, /* DW700 GPS USB interface */
 	{ } /* Terminating Entry */
 };
 
 MODULE_DEVICE_TABLE(usb, id_table);
 
+struct cp210x_port_private {
+	__u8			bInterfaceNumber;
+};
+
 static struct usb_driver cp210x_driver = {
 	.name		= "cp210x",
 	.probe		= usb_serial_probe,
 	.disconnect	= usb_serial_disconnect,
 	.id_table	= id_table,
-	.no_dynamic_id	= 	1,
 };
 
 static struct usb_serial_driver cp210x_device = {
@@ -160,7 +180,6 @@ static struct usb_serial_driver cp210x_device = {
 		.owner =	THIS_MODULE,
 		.name = 	"cp210x",
 	},
-	.usb_driver		= &cp210x_driver,
 	.id_table		= id_table,
 	.num_ports		= 1,
 	.bulk_in_size		= 256,
@@ -172,7 +191,12 @@ static struct usb_serial_driver cp210x_device = {
 	.tiocmget 		= cp210x_tiocmget,
 	.tiocmset		= cp210x_tiocmset,
 	.attach			= cp210x_startup,
+	.release		= cp210x_release,
 	.dtr_rts		= cp210x_dtr_rts
+};
+
+static struct usb_serial_driver * const serial_drivers[] = {
+	&cp210x_device, NULL
 };
 
 /* Config request types */
@@ -259,6 +283,7 @@ static int cp210x_get_config(struct usb_serial_port *port, u8 request,
 		unsigned int *data, int size)
 {
 	struct usb_serial *serial = port->serial;
+	struct cp210x_port_private *port_priv = usb_get_serial_port_data(port);
 	__le32 *buf;
 	int result, i, length;
 
@@ -274,7 +299,8 @@ static int cp210x_get_config(struct usb_serial_port *port, u8 request,
 	/* Issue the request, attempting to read 'size' bytes */
 	result = usb_control_msg(serial->dev, usb_rcvctrlpipe(serial->dev, 0),
 				request, REQTYPE_DEVICE_TO_HOST, 0x0000,
-				0, buf, size, 300);
+				port_priv->bInterfaceNumber, buf, size,
+				USB_CTRL_GET_TIMEOUT);
 
 	/* Convert data into an array of integers */
 	for (i = 0; i < length; i++)
@@ -284,9 +310,12 @@ static int cp210x_get_config(struct usb_serial_port *port, u8 request,
 
 	if (result != size) {
 		dbg("%s - Unable to send config request, "
-				"request=0x%x size=%d result=%d\n",
+				"request=0x%x size=%d result=%d",
 				__func__, request, size, result);
-		return -EPROTO;
+		if (result > 0)
+			result = -EPROTO;
+
+		return result;
 	}
 
 	return 0;
@@ -302,6 +331,7 @@ static int cp210x_set_config(struct usb_serial_port *port, u8 request,
 		unsigned int *data, int size)
 {
 	struct usb_serial *serial = port->serial;
+	struct cp210x_port_private *port_priv = usb_get_serial_port_data(port);
 	__le32 *buf;
 	int result, i, length;
 
@@ -323,21 +353,26 @@ static int cp210x_set_config(struct usb_serial_port *port, u8 request,
 		result = usb_control_msg(serial->dev,
 				usb_sndctrlpipe(serial->dev, 0),
 				request, REQTYPE_HOST_TO_DEVICE, 0x0000,
-				0, buf, size, 300);
+				port_priv->bInterfaceNumber, buf, size,
+				USB_CTRL_SET_TIMEOUT);
 	} else {
 		result = usb_control_msg(serial->dev,
 				usb_sndctrlpipe(serial->dev, 0),
 				request, REQTYPE_HOST_TO_DEVICE, data[0],
-				0, NULL, 0, 300);
+				port_priv->bInterfaceNumber, NULL, 0,
+				USB_CTRL_SET_TIMEOUT);
 	}
 
 	kfree(buf);
 
 	if ((size > 2 && result != size) || result < 0) {
 		dbg("%s - Unable to send request, "
-				"request=0x%x size=%d result=%d\n",
+				"request=0x%x size=%d result=%d",
 				__func__, request, size, result);
-		return -EPROTO;
+		if (result > 0)
+			result = -EPROTO;
+
+		return result;
 	}
 
 	return 0;
@@ -397,12 +432,15 @@ static unsigned int cp210x_quantise_baudrate(unsigned int baud) {
 
 static int cp210x_open(struct tty_struct *tty, struct usb_serial_port *port)
 {
+	int result;
+
 	dbg("%s - port %d", __func__, port->number);
 
-	if (cp210x_set_config_single(port, CP210X_IFC_ENABLE, UART_ENABLE)) {
-		dev_err(&port->dev, "%s - Unable to enable UART\n",
-				__func__);
-		return -EPROTO;
+	result = cp210x_set_config_single(port, CP210X_IFC_ENABLE,
+								UART_ENABLE);
+	if (result) {
+		dev_err(&port->dev, "%s - Unable to enable UART\n", __func__);
+		return result;
 	}
 
 	/* Configure the termios structure */
@@ -522,18 +560,13 @@ static void cp210x_get_termios_port(struct usb_serial_port *port,
 		cflag |= PARENB;
 		break;
 	case BITS_PARITY_MARK:
-		dbg("%s - parity = MARK (not supported, disabling parity)",
-				__func__);
-		cflag &= ~PARENB;
-		bits &= ~BITS_PARITY_MASK;
-		cp210x_set_config(port, CP210X_SET_LINE_CTL, &bits, 2);
+		dbg("%s - parity = MARK", __func__);
+		cflag |= (PARENB|PARODD|CMSPAR);
 		break;
 	case BITS_PARITY_SPACE:
-		dbg("%s - parity = SPACE (not supported, disabling parity)",
-				__func__);
-		cflag &= ~PARENB;
-		bits &= ~BITS_PARITY_MASK;
-		cp210x_set_config(port, CP210X_SET_LINE_CTL, &bits, 2);
+		dbg("%s - parity = SPACE", __func__);
+		cflag &= ~PARODD;
+		cflag |= (PARENB|CMSPAR);
 		break;
 	default:
 		dbg("%s - Unknown parity mode, disabling parity", __func__);
@@ -643,7 +676,6 @@ static void cp210x_set_termios(struct tty_struct *tty,
 	if (!tty)
 		return;
 
-	tty->termios->c_cflag &= ~CMSPAR;
 	cflag = tty->termios->c_cflag;
 	old_cflag = old_termios->c_cflag;
 
@@ -678,30 +710,40 @@ static void cp210x_set_termios(struct tty_struct *tty,
 		default:
 			dbg("cp210x driver does not "
 					"support the number of bits requested,"
-					" using 8 bit mode\n");
+					" using 8 bit mode");
 				bits |= BITS_DATA_8;
 				break;
 		}
 		if (cp210x_set_config(port, CP210X_SET_LINE_CTL, &bits, 2))
 			dbg("Number of data bits requested "
-					"not supported by device\n");
+					"not supported by device");
 	}
 
-	if ((cflag & (PARENB|PARODD)) != (old_cflag & (PARENB|PARODD))) {
+	if ((cflag     & (PARENB|PARODD|CMSPAR)) !=
+	    (old_cflag & (PARENB|PARODD|CMSPAR))) {
 		cp210x_get_config(port, CP210X_GET_LINE_CTL, &bits, 2);
 		bits &= ~BITS_PARITY_MASK;
 		if (cflag & PARENB) {
-			if (cflag & PARODD) {
-				bits |= BITS_PARITY_ODD;
-				dbg("%s - parity = ODD", __func__);
+			if (cflag & CMSPAR) {
+			    if (cflag & PARODD) {
+				    bits |= BITS_PARITY_MARK;
+				    dbg("%s - parity = MARK", __func__);
+			    } else {
+				    bits |= BITS_PARITY_SPACE;
+				    dbg("%s - parity = SPACE", __func__);
+			    }
 			} else {
-				bits |= BITS_PARITY_EVEN;
-				dbg("%s - parity = EVEN", __func__);
+			    if (cflag & PARODD) {
+				    bits |= BITS_PARITY_ODD;
+				    dbg("%s - parity = ODD", __func__);
+			    } else {
+				    bits |= BITS_PARITY_EVEN;
+				    dbg("%s - parity = EVEN", __func__);
+			    }
 			}
 		}
 		if (cp210x_set_config(port, CP210X_SET_LINE_CTL, &bits, 2))
-			dbg("Parity mode not supported "
-					"by device\n");
+			dbg("Parity mode not supported by device");
 	}
 
 	if ((cflag & CSTOPB) != (old_cflag & CSTOPB)) {
@@ -716,7 +758,7 @@ static void cp210x_set_termios(struct tty_struct *tty,
 		}
 		if (cp210x_set_config(port, CP210X_SET_LINE_CTL, &bits, 2))
 			dbg("Number of stop bits requested "
-					"not supported by device\n");
+					"not supported by device");
 	}
 
 	if ((cflag & CRTSCTS) != (old_cflag & CRTSCTS)) {
@@ -828,40 +870,40 @@ static void cp210x_break_ctl (struct tty_struct *tty, int break_state)
 
 static int cp210x_startup(struct usb_serial *serial)
 {
+	struct cp210x_port_private *port_priv;
+	int i;
+
 	/* cp210x buffers behave strangely unless device is reset */
 	usb_reset_device(serial->dev);
-	return 0;
-}
 
-static int __init cp210x_init(void)
-{
-	int retval;
+	for (i = 0; i < serial->num_ports; i++) {
+		port_priv = kzalloc(sizeof(*port_priv), GFP_KERNEL);
+		if (!port_priv)
+			return -ENOMEM;
 
-	retval = usb_serial_register(&cp210x_device);
-	if (retval)
-		return retval; /* Failed to register */
+		memset(port_priv, 0x00, sizeof(*port_priv));
+		port_priv->bInterfaceNumber =
+		    serial->interface->cur_altsetting->desc.bInterfaceNumber;
 
-	retval = usb_register(&cp210x_driver);
-	if (retval) {
-		/* Failed to register */
-		usb_serial_deregister(&cp210x_device);
-		return retval;
+		usb_set_serial_port_data(serial->port[i], port_priv);
 	}
 
-	/* Success */
-	printk(KERN_INFO KBUILD_MODNAME ": " DRIVER_VERSION ":"
-	       DRIVER_DESC "\n");
 	return 0;
 }
 
-static void __exit cp210x_exit(void)
+static void cp210x_release(struct usb_serial *serial)
 {
-	usb_deregister(&cp210x_driver);
-	usb_serial_deregister(&cp210x_device);
+	struct cp210x_port_private *port_priv;
+	int i;
+
+	for (i = 0; i < serial->num_ports; i++) {
+		port_priv = usb_get_serial_port_data(serial->port[i]);
+		kfree(port_priv);
+		usb_set_serial_port_data(serial->port[i], NULL);
+	}
 }
 
-module_init(cp210x_init);
-module_exit(cp210x_exit);
+module_usb_serial_driver(cp210x_driver, serial_drivers);
 
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_VERSION(DRIVER_VERSION);

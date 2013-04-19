@@ -36,16 +36,14 @@
 #include "vidc_init_internal.h"
 #include "vcd_res_tracker_api.h"
 
-/*HTC_START*/
-#define DBG(x...)			\
-    if (vidc_msg_debug) {		\
-	    printk(KERN_DEBUG "[VID] " x);\
-    }
-/*HTC_END*/
+#define DBG(x...)				\
+	if (vidc_msg_debug) {			\
+		printk(KERN_DEBUG "[VID] " x);	\
+	}
 
 #define VIDC_NAME "msm_vidc_reg"
 
-#define ERR(x...) printk(KERN_ERR "[VID]" x)
+#define ERR(x...) printk(KERN_ERR "[VID] " x)
 
 static struct vidc_dev *vidc_device_p;
 static dev_t vidc_dev_num;
@@ -154,14 +152,9 @@ static int __devinit vidc_720p_probe(struct platform_device *pdev)
 		return -ENXIO;
 	}
 
-	/* HTC_START (klockwork issue)*/
-	if (resource && resource->start)
-	{
-		vidc_device_p->phys_base = resource->start;
-		vidc_device_p->virt_base = ioremap(resource->start,
-		resource->end - resource->start + 1);
-	}
-	/* HTC_END */
+	vidc_device_p->phys_base = resource->start;
+	vidc_device_p->virt_base = ioremap(resource->start,
+	resource->end - resource->start + 1);
 
 	if (!vidc_device_p->virt_base) {
 		ERR("%s() : ioremap failed\n", __func__);
@@ -291,14 +284,14 @@ static int __init vidc_init(void)
 
 	if (unlikely(rc)) {
 		ERR("%s() :request_irq failed\n", __func__);
-		goto error_vidc_platfom_register;
+		goto error_vidc_request_irq;
 	}
 	res_trk_init(vidc_device_p->device, vidc_device_p->irq);
 	vidc_timer_wq = create_singlethread_workqueue("vidc_timer_wq");
 	if (!vidc_timer_wq) {
 		ERR("%s: create workque failed\n", __func__);
 		rc = -ENOMEM;
-		goto error_vidc_platfom_register;
+		goto error_vidc_create_workqueue;
 	}
 	DBG("Disabling IRQ in %s()\n", __func__);
 	disable_irq_nosync(vidc_device_p->irq);
@@ -325,6 +318,10 @@ static int __init vidc_init(void)
 #endif
 	return 0;
 
+error_vidc_create_workqueue:
+	free_irq(vidc_device_p->irq, vidc_device_p->device);
+error_vidc_request_irq:
+	platform_driver_unregister(&msm_vidc_720p_platform_driver);
 error_vidc_platfom_register:
 	cdev_del(&(vidc_device_p->cdev));
 error_vidc_cdev_add:
@@ -349,28 +346,32 @@ int vidc_load_firmware(void)
 {
 	u32 status = true;
 
-	mutex_lock(&vidc_device_p->lock);
-	if (!vidc_device_p->get_firmware) {
-		status = res_trk_download_firmware();
-		if (!status)
-			goto error;
-		vidc_device_p->get_firmware = 1;
-	}
-	vidc_device_p->firmware_refcount++;
+	if (!res_trk_check_for_sec_session()) {
+		mutex_lock(&vidc_device_p->lock);
+		if (!vidc_device_p->get_firmware) {
+			status = res_trk_download_firmware();
+			if (!status)
+				goto error;
+			vidc_device_p->get_firmware = 1;
+		}
+		vidc_device_p->firmware_refcount++;
 error:
-	mutex_unlock(&vidc_device_p->lock);
+		mutex_unlock(&vidc_device_p->lock);
+	}
 	return status;
 }
 EXPORT_SYMBOL(vidc_load_firmware);
 
 void vidc_release_firmware(void)
 {
-	mutex_lock(&vidc_device_p->lock);
-	if (vidc_device_p->firmware_refcount > 0)
-		vidc_device_p->firmware_refcount--;
-	else
-		vidc_device_p->firmware_refcount = 0;
-	mutex_unlock(&vidc_device_p->lock);
+	if (!res_trk_check_for_sec_session()) {
+		mutex_lock(&vidc_device_p->lock);
+		if (vidc_device_p->firmware_refcount > 0)
+			vidc_device_p->firmware_refcount--;
+		else
+			vidc_device_p->firmware_refcount = 0;
+		mutex_unlock(&vidc_device_p->lock);
+	}
 }
 EXPORT_SYMBOL(vidc_release_firmware);
 
@@ -456,7 +457,8 @@ void vidc_cleanup_addr_table(struct video_client_ctx *client_ctx,
 		if (!IS_ERR_OR_NULL(client_ctx->user_ion_client)) {
 			ion_unmap_kernel(client_ctx->user_ion_client,
 					client_ctx->h264_mv_ion_handle);
-			if (!res_trk_check_for_sec_session()) {
+			if (!res_trk_check_for_sec_session() &&
+			    (res_trk_get_core_type() != (u32)VCD_CORE_720P)) {
 				ion_unmap_iommu(client_ctx->user_ion_client,
 					client_ctx->h264_mv_ion_handle,
 					VIDEO_DOMAIN,
@@ -526,7 +528,6 @@ u32 vidc_lookup_addr_table(struct video_client_ctx *client_ctx,
 		*pmem_fd = buf_addr_table[i].pmem_fd;
 		*file = buf_addr_table[i].file;
 		*buffer_index = i;
-/*HTC_START*/
 		if (search_with_user_vaddr) {
 			DBG("kernel_vaddr = 0x%08lx, phy_addr = 0x%08lx "
 			" pmem_fd = %d, struct *file	= %p "
@@ -549,7 +550,6 @@ u32 vidc_lookup_addr_table(struct video_client_ctx *client_ctx,
 			" Not Found.\n", __func__, client_ctx,
 			*kernel_vaddr);
 			}
-/*HTC_END*/
 		mutex_unlock(&client_ctx->enrty_queue_lock);
 		return false;
 	}
@@ -589,7 +589,7 @@ u32 vidc_insert_addr_table(struct video_client_ctx *client_ctx,
 		num_of_buffers = &client_ctx->num_of_output_buffers;
 		DBG("%s(): buffer = OUTPUT #Buf = %d\n",
 			__func__, *num_of_buffers);
-		length = length * 2; /* workaround for iommu video h/w bug */
+		length = length * 2; 
 	}
 
 	if (*num_of_buffers == max_num_buffers) {
@@ -630,7 +630,7 @@ u32 vidc_insert_addr_table(struct video_client_ctx *client_ctx,
 			buf_addr_table[*num_of_buffers].dev_addr =
 				mapped_buffer->iova[0];
 		} else {
-			buff_ion_handle = ion_import_fd(
+			buff_ion_handle = ion_import_dma_buf(
 				client_ctx->user_ion_client, pmem_fd);
 			if (IS_ERR_OR_NULL(buff_ion_handle)) {
 				ERR("%s(): get_ION_handle failed\n",
@@ -653,9 +653,11 @@ u32 vidc_insert_addr_table(struct video_client_ctx *client_ctx,
 				ERR("%s():ION virtual addr fail\n",
 				 __func__);
 				*kernel_vaddr = (unsigned long)NULL;
+				show_mem(SHOW_MEM_FILTER_NODES);
 				goto ion_free_error;
 			}
-			if (res_trk_check_for_sec_session()) {
+			if (res_trk_check_for_sec_session() ||
+			   (res_trk_get_core_type() == (u32)VCD_CORE_720P)) {
 				if (ion_phys(client_ctx->user_ion_client,
 					buff_ion_handle,
 					&phys_addr, &ion_len)) {
@@ -679,9 +681,10 @@ u32 vidc_insert_addr_table(struct video_client_ctx *client_ctx,
 						(unsigned long *) &buffer_size,
 						UNCACHED,
 						ION_IOMMU_UNMAP_DELAYED);
-				if (ret) {
-					ERR("%s():ION iommu map fail\n",
-					 __func__);
+				if (ret || !iova) {
+					ERR(
+					"%s():ION iommu map fail, ret = %d, iova = 0x%lx\n",
+						__func__, ret, iova);
 					goto ion_map_error;
 				}
 				phys_addr = iova;
@@ -722,10 +725,6 @@ bail_out_add:
 }
 EXPORT_SYMBOL(vidc_insert_addr_table);
 
-/*
- * Similar to vidc_insert_addr_table except intended for in-kernel
- * use where buffers have already been alloced and mapped properly
- */
 u32 vidc_insert_addr_table_kernel(struct video_client_ctx *client_ctx,
 	enum buffer_dir buffer, unsigned long user_vaddr,
 	unsigned long kernel_vaddr, unsigned long phys_addr,
@@ -782,8 +781,8 @@ u32 vidc_insert_addr_table_kernel(struct video_client_ctx *client_ctx,
 		buf_addr_table[*num_of_buffers].buff_ion_handle = NULL;
 		*num_of_buffers = *num_of_buffers + 1;
 		DBG("%s() : client_ctx = %p, user_virt_addr = 0x%08lx, "
-			"kernel_vaddr = 0x%08lx phys_addr=%lu inserted!", __func__,
-			client_ctx, user_vaddr, kernel_vaddr, phys_addr);
+			"kernel_vaddr = 0x%08lx inserted!", __func__,
+			client_ctx, user_vaddr, kernel_vaddr);
 	}
 	mutex_unlock(&client_ctx->enrty_queue_lock);
 	return true;
@@ -836,7 +835,8 @@ u32 vidc_delete_addr_table(struct video_client_ctx *client_ctx,
 	if (buf_addr_table[i].buff_ion_handle) {
 		ion_unmap_kernel(client_ctx->user_ion_client,
 				buf_addr_table[i].buff_ion_handle);
-		if (!res_trk_check_for_sec_session()) {
+		if (!res_trk_check_for_sec_session() &&
+		   (res_trk_get_core_type() != (u32)VCD_CORE_720P)) {
 			ion_unmap_iommu(client_ctx->user_ion_client,
 				buf_addr_table[i].buff_ion_handle,
 				VIDEO_DOMAIN,

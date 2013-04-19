@@ -147,7 +147,7 @@ DEFINE_EVENT(kmem_free, kmem_cache_free,
 	TP_ARGS(call_site, ptr)
 );
 
-TRACE_EVENT(mm_page_free_direct,
+TRACE_EVENT(mm_page_free,
 
 	TP_PROTO(struct page *page, unsigned int order),
 
@@ -169,7 +169,7 @@ TRACE_EVENT(mm_page_free_direct,
 			__entry->order)
 );
 
-TRACE_EVENT(mm_pagevec_free,
+TRACE_EVENT(mm_page_free_batched,
 
 	TP_PROTO(struct page *page, int cold),
 
@@ -302,7 +302,6 @@ TRACE_EVENT(mm_page_alloc_extfrag,
 		__entry->alloc_migratetype == __entry->fallback_migratetype)
 );
 
-#endif /* _TRACE_KMEM_H */
+#endif 
 
-/* This part must be outside protection */
 #include <trace/define_trace.h>

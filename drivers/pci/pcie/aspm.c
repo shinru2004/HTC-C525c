@@ -76,7 +76,15 @@ static LIST_HEAD(link_list);
 #define POLICY_DEFAULT 0	/* BIOS default setting */
 #define POLICY_PERFORMANCE 1	/* high performance */
 #define POLICY_POWERSAVE 2	/* high power saving */
+
+#ifdef CONFIG_PCIEASPM_PERFORMANCE
+static int aspm_policy = POLICY_PERFORMANCE;
+#elif defined CONFIG_PCIEASPM_POWERSAVE
+static int aspm_policy = POLICY_POWERSAVE;
+#else
 static int aspm_policy;
+#endif
+
 static const char *policy_str[] = {
 	[POLICY_DEFAULT] = "default",
 	[POLICY_PERFORMANCE] = "performance",
@@ -508,6 +516,16 @@ static int pcie_aspm_sanity_check(struct pci_dev *pdev)
 		pos = pci_pcie_cap(child);
 		if (!pos)
 			return -EINVAL;
+
+		/*
+		 * If ASPM is disabled then we're not going to change
+		 * the BIOS state. It's safe to continue even if it's a
+		 * pre-1.1 device
+		 */
+
+		if (aspm_disabled)
+			continue;
+
 		/*
 		 * Disable ASPM for pre-1.1 PCIe device, we follow MS to use
 		 * RBER bit to determine if a function is 1.1 version device
@@ -954,7 +972,7 @@ static int __init pcie_aspm_disable(char *str)
 		printk(KERN_INFO "PCIe ASPM is disabled\n");
 	} else if (!strcmp(str, "force")) {
 		aspm_force = 1;
-		printk(KERN_INFO "PCIe ASPM is forcedly enabled\n");
+		printk(KERN_INFO "PCIe ASPM is forcibly enabled\n");
 	}
 	return 1;
 }

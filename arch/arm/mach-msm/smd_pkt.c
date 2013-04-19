@@ -10,10 +10,6 @@
  * GNU General Public License for more details.
  *
  */
-/*
- * SMD Packet Driver -- Provides a binary SMD non-muxed packet port
- *                       interface.
- */
 
 #include <linux/slab.h>
 #include <linux/cdev.h>
@@ -37,21 +33,59 @@
 #include <mach/peripheral-loader.h>
 
 #include "smd_private.h"
+
+#if defined(pr_warn)
+#undef pr_warn
+#endif
+#define pr_warn(x...) do {				\
+			printk(KERN_WARN "[SMD][PKT] "x);		\
+	} while (0)
+
+#if defined(pr_debug)
+#undef pr_debug
+#endif
+#define pr_debug(x...) do {				\
+			printk(KERN_DEBUG "[SMD][PKT] "x);		\
+	} while (0)
+
+#if defined(pr_info)
+#undef pr_info
+#endif
+#define pr_info(x...) do {				\
+			printk(KERN_INFO "[SMD][PKT] "x);		\
+	} while (0)
+
+#if defined(pr_err)
+#undef pr_err
+#endif
+#define pr_err(x...) do {				\
+			printk(KERN_ERR "[SMD][PKT] "x);		\
+	} while (0)
+
+#if defined(pr_warn)
+#undef pr_warn
+#endif
+#define pr_warn(x...) do {				\
+			printk(KERN_WARNING "[SMD][PKT] "x);		\
+	} while (0)
+
 #ifdef CONFIG_ARCH_FSM9XXX
 #define NUM_SMD_PKT_PORTS 4
 #else
 #define NUM_SMD_PKT_PORTS 15
 #endif
 
+#define PDRIVER_NAME_MAX_SIZE 32
 #define LOOPBACK_INX (NUM_SMD_PKT_PORTS - 1)
 
 #define DEVICE_NAME "smdpkt"
-#define WAKELOCK_TIMEOUT (HZ)
+#define WAKELOCK_TIMEOUT (2*HZ)
 
 struct smd_pkt_dev {
 	struct cdev cdev;
 	struct device *devicep;
 	void *pil;
+	char pdriver_name[PDRIVER_NAME_MAX_SIZE];
 	struct platform_driver driver;
 
 	struct smd_channel *ch;
@@ -73,7 +107,7 @@ struct smd_pkt_dev {
 	int has_reset;
 	int do_reset_notification;
 	struct completion ch_allocated;
-	struct wake_lock pa_wake_lock;		/* Packet Arrival Wake lock*/
+	struct wake_lock pa_wake_lock;		
 	struct work_struct packet_arrival_work;
 	struct spinlock pa_spinlock;
 	int wakelock_locked;
@@ -219,10 +253,6 @@ static void clean_and_signal(struct smd_pkt_dev *smd_pkt_devp)
 static void loopback_probe_worker(struct work_struct *work)
 {
 
-	/* Wait for the modem SMSM to be inited for the SMD
-	** Loopback channel to be allocated at the modem. Since
-	** the wait need to be done atmost once, using msleep
-	** doesn't degrade the performance. */
 	if (!is_modem_smsm_inited())
 		schedule_delayed_work(&loopback_work, msecs_to_jiffies(1000));
 	else
@@ -307,7 +337,7 @@ ssize_t smd_pkt_read(struct file *file,
 	}
 
 	if (smd_pkt_devp->do_reset_notification) {
-		/* notify client that a reset occurred */
+		
 		pr_err("%s notifying reset for smd_pkt_dev id:%d\n",
 			__func__, smd_pkt_devp->i);
 		return notify_reset(smd_pkt_devp);
@@ -339,9 +369,9 @@ wait_for_packet:
 
 	if (r < 0) {
 		mutex_unlock(&smd_pkt_devp->rx_lock);
-		/* qualify error message */
+		
 		if (r != -ERESTARTSYS) {
-			/* we get this anytime a signal comes in */
+			
 			pr_err("%s: wait_event_interruptible on smd_pkt_dev"
 			       " id:%d ret %i\n",
 				__func__, smd_pkt_devp->i, r);
@@ -349,7 +379,7 @@ wait_for_packet:
 		return r;
 	}
 
-	/* Here we have a whole packet waiting for us */
+	
 	pkt_size = smd_cur_packet_size(smd_pkt_devp->ch);
 
 	if (!pkt_size) {
@@ -413,7 +443,7 @@ wait_for_packet:
 	D_READ("Finished %s on smd_pkt_dev id:%d  %d bytes\n",
 		__func__, smd_pkt_devp->i, bytes_read);
 
-	/* check and wakeup read threads waiting on this device */
+	
 	check_and_wakeup_reader(smd_pkt_devp);
 
 	return bytes_read;
@@ -444,7 +474,7 @@ ssize_t smd_pkt_write(struct file *file,
 	if (smd_pkt_devp->do_reset_notification || smd_pkt_devp->has_reset) {
 		pr_err("%s notifying reset for smd_pkt_dev id:%d\n",
 			__func__, smd_pkt_devp->i);
-		/* notify client that a reset occurred */
+		
 		return notify_reset(smd_pkt_devp);
 	}
 	D_WRITE("Begin %s on smd_pkt_dev id:%d data_size %d\n",
@@ -574,7 +604,7 @@ static void check_and_wakeup_reader(struct smd_pkt_dev *smd_pkt_devp)
 		return;
 	}
 
-	/* here we have a packet of size sz ready */
+	
 	spin_lock_irqsave(&smd_pkt_devp->pa_spinlock, flags);
 	wake_lock(&smd_pkt_devp->pa_wake_lock);
 	smd_pkt_devp->wakelock_locked = 1;
@@ -638,7 +668,7 @@ static void ch_notify(void *priv, unsigned event)
 		D_STATUS("%s: CLOSE event in smd_pkt_dev id:%d\n",
 			  __func__, smd_pkt_devp->i);
 		smd_pkt_devp->is_open = 0;
-		/* put port into reset state */
+		
 		clean_and_signal(smd_pkt_devp);
 		if (smd_pkt_devp->i == LOOPBACK_INX)
 			schedule_delayed_work(&loopback_work,
@@ -729,7 +759,10 @@ static int smd_pkt_dummy_probe(struct platform_device *pdev)
 	int i;
 
 	for (i = 0; i < NUM_SMD_PKT_PORTS; i++) {
-		if (!strncmp(pdev->name, smd_ch_name[i], SMD_MAX_CH_NAME_LEN)) {
+		if (smd_ch_edge[i] == pdev->id
+		    && !strncmp(pdev->name, smd_ch_name[i],
+				SMD_MAX_CH_NAME_LEN)
+		    && smd_pkt_devp[i]->driver.probe) {
 			complete_all(&smd_pkt_devp[i]->ch_allocated);
 			D_STATUS("%s allocated SMD ch for smd_pkt_dev id:%d\n",
 				 __func__, i);
@@ -772,8 +805,9 @@ int smd_pkt_open(struct inode *inode, struct file *file)
 				packet_arrival_worker);
 		init_completion(&smd_pkt_devp->ch_allocated);
 		smd_pkt_devp->driver.probe = smd_pkt_dummy_probe;
-		smd_pkt_devp->driver.driver.name =
-			smd_ch_name[smd_pkt_devp->i];
+		scnprintf(smd_pkt_devp->pdriver_name, PDRIVER_NAME_MAX_SIZE,
+			  "%s", smd_ch_name[smd_pkt_devp->i]);
+		smd_pkt_devp->driver.driver.name = smd_pkt_devp->pdriver_name;
 		smd_pkt_devp->driver.driver.owner = THIS_MODULE;
 		r = platform_driver_register(&smd_pkt_devp->driver);
 		if (r) {
@@ -791,13 +825,11 @@ int smd_pkt_open(struct inode *inode, struct file *file)
 				pr_err("%s failed on smd_pkt_dev id:%d -"
 				       " pil_get failed for %s\n", __func__,
 					smd_pkt_devp->i, peripheral);
+				pr_err(" ==> smd_pkt_dev_name: %s, smd_ch_name: %s, smd_ch_edge: %d\n",
+					smd_pkt_dev_name[smd_pkt_devp->i], smd_ch_name[smd_pkt_devp->i], smd_ch_edge[smd_pkt_devp->i]);	
 				goto release_pd;
 			}
 
-			/* Wait for the modem SMSM to be inited for the SMD
-			** Loopback channel to be allocated at the modem. Since
-			** the wait need to be done atmost once, using msleep
-			** doesn't degrade the performance. */
 			if (!strncmp(smd_ch_name[smd_pkt_devp->i], "LOOPBACK",
 						SMD_MAX_CH_NAME_LEN)) {
 				if (!is_modem_smsm_inited())
@@ -807,10 +839,6 @@ int smd_pkt_open(struct inode *inode, struct file *file)
 				msleep(100);
 			}
 
-			/*
-			 * Wait for a packet channel to be allocated so we know
-			 * the modem is ready enough.
-			 */
 			if (smd_pkt_devp->open_modem_wait) {
 				r = wait_for_completion_interruptible_timeout(
 					&smd_pkt_devp->ch_allocated,
@@ -837,16 +865,14 @@ int smd_pkt_open(struct inode *inode, struct file *file)
 			pr_err("%s: %s open failed %d\n", __func__,
 			       smd_ch_name[smd_pkt_devp->i], r);
 			goto release_pil;
-		} else
-			pr_info("[SMD] %s: %s open success return %d\n", __func__,
-					smd_ch_name[smd_pkt_devp->i], r);
+		}
 
 		r = wait_event_interruptible_timeout(
 				smd_pkt_devp->ch_opened_wait_queue,
 				smd_pkt_devp->is_open, (2 * HZ));
 		if (r == 0) {
 			r = -ETIMEDOUT;
-			/* close the ch to sync smd's state with smd_pkt */
+			
 			smd_close(smd_pkt_devp->ch);
 			smd_pkt_devp->ch = NULL;
 		}
@@ -872,8 +898,10 @@ release_pil:
 		pil_put(smd_pkt_devp->pil);
 
 release_pd:
-	if (r < 0)
+	if (r < 0) {
 		platform_driver_unregister(&smd_pkt_devp->driver);
+		smd_pkt_devp->driver.probe = NULL;
+	}
 out:
 	if (!smd_pkt_devp->ch)
 		wake_lock_destroy(&smd_pkt_devp->pa_wake_lock);
@@ -907,6 +935,7 @@ int smd_pkt_release(struct inode *inode, struct file *file)
 		smd_pkt_devp->blocking_write = 0;
 		smd_pkt_devp->poll_mode = 0;
 		platform_driver_unregister(&smd_pkt_devp->driver);
+		smd_pkt_devp->driver.probe = NULL;
 		if (smd_pkt_devp->pil)
 			pil_put(smd_pkt_devp->pil);
 	}

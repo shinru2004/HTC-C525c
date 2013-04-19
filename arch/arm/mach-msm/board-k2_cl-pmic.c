@@ -170,7 +170,7 @@ static struct pm8xxx_adc_amux pm8xxx_adc_channels_data[] = {
 };
 
 static struct pm8xxx_adc_properties pm8xxx_adc_data = {
-	.adc_vdd_reference	= 1800, /* milli-voltage for this adc */
+	.adc_vdd_reference	= 1800, 
 	.bitresolution		= 15,
 	.bipolar                = 0,
 };
@@ -448,7 +448,7 @@ static struct pm8921_charger_platform_data pm8921_chg_pdata __devinitdata = {
 	.warm_bat_chg_current	= 1125,
 	.cool_bat_voltage	= 4200,
 	.warm_bat_voltage	= 4000,
-	.mbat_in_gpio		= 94,/* MBAT_IN : 94*/
+	.mbat_in_gpio		= 94,
 	.thermal_mitigation	= pm8921_therm_mitigation,
 	.thermal_levels		= ARRAY_SIZE(pm8921_therm_mitigation),
 	.cold_thr = PM_SMBC_BATT_TEMP_COLD_THR__HIGH,
@@ -491,7 +491,6 @@ static struct wled_config_data wled_cfg = {
 	.boost_curr_lim = WLED_CURR_LIMIT_525mA,
 	.num_strings = 1,
 };
-#if defined(CONFIG_MACH_TC2) || defined(CONFIG_MACH_K2_CL)
 static int pm8038_led0_pwm_duty_pcts[64] = {
 			0, 15, 30, 45, 60, 75, 90, 100,
 			100, 90, 75, 60, 45, 30, 15, 0,
@@ -510,7 +509,6 @@ static struct pm8xxx_pwm_duty_cycles pm8038_led0_pwm_duty_cycles = {
 	.duty_ms = PM8XXX_LED_PWM_DUTY_MS,
 	.start_idx = 0,
 };
-#endif
 static struct pm8xxx_led_config pm8038_led_configs[] = {
 	[0] = {
 		.id = PM8XXX_ID_WLED,
@@ -524,6 +522,7 @@ static struct pm8xxx_led_config pm8038_led_configs[] = {
 		.mode = PM8XXX_LED_MODE_PWM1,
 		.pwm_channel = 5,
 		.pwm_period_us = PM8XXX_LED_PWM_PERIOD,
+		.pwm_coefficient = 20,
 	},
 	[2] = {
 		.id = PM8XXX_ID_RGB_LED_GREEN,
@@ -541,7 +540,6 @@ static struct pm8xxx_led_config pm8038_led_configs[] = {
 		.pwm_duty_cycles = &pm8038_led0_pwm_duty_cycles,
 	},
 #endif
-#ifdef CONFIG_MACH_K2_CL
 	[3] = {
 		.id = PM8XXX_ID_RGB_LED_BLUE,
 		.mode = PM8XXX_LED_MODE_PWM1,
@@ -550,7 +548,6 @@ static struct pm8xxx_led_config pm8038_led_configs[] = {
 		.pwm_period_us = PM8XXX_LED_PWM_PERIOD,
 		.pwm_duty_cycles = &pm8038_led0_pwm_duty_cycles,
 	},
-#endif
 };
 
 static struct pm8xxx_led_platform_data pm8xxx_leds_pdata = {

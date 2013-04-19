@@ -13,9 +13,10 @@
 #include <linux/cpu.h>
 
 #include <asm/cacheflush.h>
+#include <asm/smp_plat.h>
 #include <asm/vfp.h>
 
-#include <mach/qdss.h>
+#include <mach/jtag.h>
 #include <mach/msm_rtb.h>
 
 #include "pm.h"
@@ -33,8 +34,6 @@ static DEFINE_PER_CPU_SHARED_ALIGNED(struct msm_hotplug_device,
 
 static inline void cpu_enter_lowpower(void)
 {
-	/* Just flush the cache. Changing the coherency is not yet
-	 * available on msm. */
 	flush_cache_all();
 }
 
@@ -44,28 +43,17 @@ static inline void cpu_leave_lowpower(void)
 
 static inline void platform_do_lowpower(unsigned int cpu)
 {
-	/* Just enter wfi for now. TODO: Properly shut off the cpu. */
+	
 	for (;;) {
 
 		msm_pm_cpu_enter_lowpower(cpu);
-		if (pen_release == cpu) {
-			/*
-			 * OK, proper wakeup, we're done
-			 */
+		if (pen_release == cpu_logical_map(cpu)) {
 			pen_release = -1;
 			dmac_flush_range((void *)&pen_release,
 				(void *)(&pen_release + sizeof(pen_release)));
 			break;
 		}
 
-		/*
-		 * getting here, means that we have come out of WFI without
-		 * having been woken up - this shouldn't happen
-		 *
-		 * The trouble is, letting people know about this is not really
-		 * possible, since we are currently running incoherently, and
-		 * therefore cannot safely call printk() or anything else
-		 */
 		dmac_inv_range((void *)&pen_release,
 			       (void *)(&pen_release + sizeof(pen_release)));
 		pr_debug("CPU%u: spurious wakeup call\n", cpu);
@@ -77,17 +65,12 @@ int platform_cpu_kill(unsigned int cpu)
 	struct completion *killed =
 		&per_cpu(msm_hotplug_devices, cpu).cpu_killed;
 
-	if(!wait_for_completion_timeout(killed, HZ * 5))
+	if (!wait_for_completion_timeout(killed, HZ * 5))
 		return -EBUSY;
 
 	return msm_pm_wait_cpu_shutdown(cpu);
 }
 
-/*
- * platform-specific code to shutdown a CPU
- *
- * Called with IRQs disabled
- */
 void platform_cpu_die(unsigned int cpu)
 {
 	if (unlikely(cpu != smp_processor_id())) {
@@ -96,22 +79,15 @@ void platform_cpu_die(unsigned int cpu)
 		BUG();
 	}
 	complete(&__get_cpu_var(msm_hotplug_devices).cpu_killed);
-	/*
-	 * we're ready for shutdown now, so do it
-	 */
 	cpu_enter_lowpower();
 	platform_do_lowpower(cpu);
 
-	pr_notice("CPU%u: %s: normal wakeup\n", cpu, __func__);
+	pr_debug("CPU%u: %s: normal wakeup\n", cpu, __func__);
 	cpu_leave_lowpower();
 }
 
 int platform_cpu_disable(unsigned int cpu)
 {
-	/*
-	 * we don't allow CPU 0 to be shutdown (it is still too special
-	 * e.g. clock tick interrupts)
-	 */
 	return cpu == 0 ? -EPERM : 0;
 }
 
@@ -125,14 +101,6 @@ int platform_cpu_disable(unsigned int cpu)
 static int hotplug_rtb_callback(struct notifier_block *nfb,
 				unsigned long action, void *hcpu)
 {
-	/*
-	 * Bits [19:4] of the data are the online mask, lower 4 bits are the
-	 * cpu number that is being changed. Additionally, changes to the
-	 * online_mask that will be done by the current hotplug will be made
-	 * even though they aren't necessarily in the online mask yet.
-	 *
-	 * XXX: This design is limited to supporting at most 16 cpus
-	 */
 	int this_cpumask = CPUSET_OF(1 << (int)hcpu);
 	int cpumask = CPUSET_OF(cpumask_bits(cpu_online_mask)[0]);
 	int cpudata = CPU_OF((int)hcpu) | cpumask;
@@ -165,16 +133,19 @@ int msm_platform_secondary_init(unsigned int cpu)
 		return 0;
 	}
 	msm_jtag_restore_state();
-#ifdef CONFIG_VFP
-	vfp_reinit();
+#if defined(CONFIG_VFP) && defined (CONFIG_CPU_PM)
+	vfp_pm_resume();
 #endif
 	ret = msm_spm_set_low_power_mode(MSM_SPM_MODE_CLOCK_GATING, false);
 
 	return ret;
 }
 
-static int __init init_hotplug_notifier(void)
+static int __init init_hotplug(void)
 {
+
+	struct msm_hotplug_device *dev = &__get_cpu_var(msm_hotplug_devices);
+	init_completion(&dev->cpu_killed);
 	return register_hotcpu_notifier(&hotplug_rtb_notifier);
 }
-early_initcall(init_hotplug_notifier);
+early_initcall(init_hotplug);

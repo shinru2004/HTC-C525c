@@ -22,6 +22,7 @@
 #include <linux/msm_tsens.h>
 #include <linux/msm_thermal.h>
 #include <mach/cpufreq.h>
+#include <mach/perflock.h>
 
 static int enabled;
 static struct msm_thermal_data msm_thermal_info;
@@ -67,9 +68,12 @@ static void check_temp(struct work_struct *work)
 	} else
 		pr_info("msm_thermal: TSENS sensor %d (%ld C)\n",
 				tsens_dev.sensor_num, temp);
-
-	if (temp >= msm_thermal_info.limit_temp)
+	if (temp >= msm_thermal_info.limit_temp) {
 		max_freq = msm_thermal_info.limit_freq;
+#ifdef CONFIG_PERFLOCK_BOOT_LOCK
+		release_boot_lock();
+#endif
+	}
 	else if (temp <
 		msm_thermal_info.limit_temp - msm_thermal_info.temp_hysteresis)
 		max_freq = MSM_CPUFREQ_NO_LIMIT;
@@ -77,7 +81,7 @@ static void check_temp(struct work_struct *work)
 	if (max_freq == limited_max_freq)
 		goto reschedule;
 
-	/* Update new limits */
+	
 	for_each_possible_cpu(cpu) {
 		ret = update_cpu_max_freq(cpu, max_freq);
 		if (ret)
@@ -95,12 +99,10 @@ static void disable_msm_thermal(void)
 {
 	int cpu = 0;
 
-	/* make sure check_temp is no longer running */
-	cancel_delayed_work(&check_temp_work);
+	
+	cancel_delayed_work_sync(&check_temp_work);
 	flush_scheduled_work();
 
-	if (limited_max_freq == MSM_CPUFREQ_NO_LIMIT)
-		return;
 
 	for_each_possible_cpu(cpu) {
 		update_cpu_max_freq(cpu, MSM_CPUFREQ_NO_LIMIT);

@@ -21,7 +21,7 @@
  *
  * Fundamental constants relating to IP Protocol
  *
- * $Id: bcmip.h 290206 2011-10-17 19:13:51Z $
+ * $Id: bcmip.h 341840 2012-06-28 22:01:59Z $
  */
 
 #ifndef _bcmip_h_
@@ -52,15 +52,16 @@
 #define IP_PROT_ICMP6		0x3a	
 
 
-#define IPV4_VER_HL_OFFSET	0	
-#define IPV4_TOS_OFFSET		1	
-#define IPV4_PKTLEN_OFFSET	2	
-#define IPV4_PKTFLAG_OFFSET	6	
-#define IPV4_PROT_OFFSET	9	
-#define IPV4_CHKSUM_OFFSET	10	
-#define IPV4_SRC_IP_OFFSET	12	
-#define IPV4_DEST_IP_OFFSET	16	
-#define IPV4_OPTIONS_OFFSET	20	
+#define IPV4_VER_HL_OFFSET      0       
+#define IPV4_TOS_OFFSET         1       
+#define IPV4_PKTLEN_OFFSET      2       
+#define IPV4_PKTFLAG_OFFSET     6       
+#define IPV4_PROT_OFFSET        9       
+#define IPV4_CHKSUM_OFFSET      10      
+#define IPV4_SRC_IP_OFFSET      12      
+#define IPV4_DEST_IP_OFFSET     16      
+#define IPV4_OPTIONS_OFFSET     20      
+#define IPV4_MIN_HEADER_LEN     20      
 
 
 #define IPV4_VER_MASK		0xf0	

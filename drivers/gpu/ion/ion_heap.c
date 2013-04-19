@@ -54,8 +54,6 @@ struct ion_heap *ion_heap_create(struct ion_platform_heap *heap_data)
 
 	heap->name = heap_data->name;
 	heap->id = heap_data->id;
-    if (heap->ops)
-        pr_err("gpuion: %s: id %d, ops %p cache_op %p\n", __func__, heap->id, heap->ops, heap->ops->cache_op);
 	return heap;
 }
 

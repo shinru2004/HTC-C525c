@@ -3,6 +3,13 @@
 #define PLATFORM_DRIVER_NAME "msm_camera_s5k6a2ya"
 #define s5k6a2ya_obj s5k6a2ya_##obj
 
+#define S5K6A2YA_REG_ORIENTATION 0x0216
+#define S5K6A2YA_ORIENTATION_NORMAL_MODE 0x00
+#define S5K6A2YA_ORIENTATION_MIRROR 0x01
+#define S5K6A2YA_ORIENTATION_FLIP 0x02
+#define S5K6A2YA_ORIENTATION_MIRROR_FLIP 0x03
+
+
 DEFINE_MUTEX(s5k6a2ya_mut);
 static struct msm_sensor_ctrl_t s5k6a2ya_s_ctrl;
 
@@ -23,134 +30,132 @@ static struct msm_camera_i2c_reg_conf s5k6a2ya_groupoff_settings[] = {
 };
 
 static struct msm_camera_i2c_reg_conf s5k6a2ya_prev_settings[] = {
-	/* Frame rate setting */
-	{0x0340, 0x04}, /* frame_length_lines_A MSB */
-	{0x0341, 0xD6}, /* frame_length_lines_A LSB : 1238d */
-	{0x0342, 0x06}, /* line_length_pck_A MSB */
-	{0x0343, 0x7E}, /* line_length_pck_A LSB : 1662d */
+	
+	{0x0340, 0x04}, 
+	{0x0341, 0xD6}, 
+	{0x0342, 0x06}, 
+	{0x0343, 0x7E}, 
 
-	/* Image size setting : Full (1472x1104) */
-	{0x0344, 0x00}, /* x_addr_start_A MSB */
-	{0x0345, 0x00}, /* x_addr_start_A LSB : 0d */
-	{0x0346, 0x00}, /* y_addr_start_A MSB */
-	{0x0347, 0x00}, /* y_addr_start_A LSB : 0d */
-	{0x0348, 0x05}, /* x_addr_end_A MSB */
-	{0x0349, 0xBF}, /* x_addr_end_A LSB : 1471d */
-	{0x034A, 0x04}, /* y_addr_end_A MSB */
-	{0x034B, 0x4F}, /* y_addr_end_A LSB : 1103d */
+	
+	{0x0344, 0x00}, 
+	{0x0345, 0x00}, 
+	{0x0346, 0x00}, 
+	{0x0347, 0x00}, 
+	{0x0348, 0x05}, 
+	{0x0349, 0xBF}, 
+	{0x034A, 0x04}, 
+	{0x034B, 0x4F}, 
 
-	/* Image output size setting */
-	{0x034C, 0x05}, /* x_output_size_A MSB */
-	{0x034D, 0xC0}, /* x_output_size_A LSB : 1472d */
-	{0x034E, 0x04}, /* y_output_size_A MSB */
-	{0x034F, 0x50}, /* y_output_size_A LSB : 1104d */
+	
+	{0x034C, 0x05}, 
+	{0x034D, 0xC0}, 
+	{0x034E, 0x04}, 
+	{0x034F, 0x50}, 
 
-	/* Sub-sampling setting */
-	{0x0381, 0x01}, /* x_even_inc_A */
-	{0x0383, 0x01}, /* x_odd_inc_A */
-	{0x0385, 0x01}, /* y_even_inc_A */
-	{0x0387, 0x01}, /* y_odd_inc_A */
+	
+	{0x0381, 0x01}, 
+	{0x0383, 0x01}, 
+	{0x0385, 0x01}, 
+	{0x0387, 0x01}, 
 
-	/* Analog gain setting */
-	{0x0204, 0x00}, /* analogue_gain_code_global_A MSB */
-	{0x0205, 0x20}, /* analogue_gain_code_global_A LSB : 32d */
+	
+	{0x0204, 0x00}, 
+	{0x0205, 0x20}, 
 
-	/* Shutter setting */
-	{0x0220, 0x01}, /* cintc */
+	
+	{0x0220, 0x01}, 
 	{0x0221, 0xF4},
-	{0x0222, 0x02}, /* cintr */
+	{0x0222, 0x02}, 
 	{0x0223, 0x6F},
 };
 
 static struct msm_camera_i2c_reg_conf s5k6a2ya_snap_settings[] = {
-	/* Frame rate setting */
-	{0x0340, 0x04}, /* frame_length_lines_A MSB */
-	{0x0341, 0xD6}, /* frame_length_lines_A LSB : 1238d */
-	{0x0342, 0x06}, /* line_length_pck_A MSB */
-	{0x0343, 0x7E}, /* line_length_pck_A LSB : 1662d */
+	
+	{0x0340, 0x04}, 
+	{0x0341, 0xD6}, 
+	{0x0342, 0x06}, 
+	{0x0343, 0x7E}, 
 
-	/* Image size setting : Full (1472x1104) */
-	{0x0344, 0x00}, /* x_addr_start_A MSB */
-	{0x0345, 0x00}, /* x_addr_start_A LSB : 0d */
-	{0x0346, 0x00}, /* y_addr_start_A MSB */
-	{0x0347, 0x00}, /* y_addr_start_A LSB : 0d */
-	{0x0348, 0x05}, /* x_addr_end_A MSB */
-	{0x0349, 0xBF}, /* x_addr_end_A LSB : 1471d */
-	{0x034A, 0x04}, /* y_addr_end_A MSB */
-	{0x034B, 0x4F}, /* y_addr_end_A LSB : 1103d */
+	
+	{0x0344, 0x00}, 
+	{0x0345, 0x00}, 
+	{0x0346, 0x00}, 
+	{0x0347, 0x00}, 
+	{0x0348, 0x05}, 
+	{0x0349, 0xBF}, 
+	{0x034A, 0x04}, 
+	{0x034B, 0x4F}, 
 
-	/* Image output size setting */
-	{0x034C, 0x05}, /* x_output_size_A MSB */
-	{0x034D, 0xC0}, /* x_output_size_A LSB : 1472d */
-	{0x034E, 0x04}, /* y_output_size_A MSB */
-	{0x034F, 0x50}, /* y_output_size_A LSB : 1104d */
+	
+	{0x034C, 0x05}, 
+	{0x034D, 0xC0}, 
+	{0x034E, 0x04}, 
+	{0x034F, 0x50}, 
 
-	/* Sub-sampling setting */
-	{0x0381, 0x01}, /* x_even_inc_A */
-	{0x0383, 0x01}, /* x_odd_inc_A */
-	{0x0385, 0x01}, /* y_even_inc_A */
-	{0x0387, 0x01}, /* y_odd_inc_A */
+	
+	{0x0381, 0x01}, 
+	{0x0383, 0x01}, 
+	{0x0385, 0x01}, 
+	{0x0387, 0x01}, 
 
-	/* Analog gain setting */
-	{0x0204, 0x00}, /* analogue_gain_code_global_A MSB */
-	{0x0205, 0x20}, /* analogue_gain_code_global_A LSB : 32d */
+	
+	{0x0204, 0x00}, 
+	{0x0205, 0x20}, 
 
-	/* Shutter setting */
-	{0x0220, 0x01}, /* cintc */
+	
+	{0x0220, 0x01}, 
 	{0x0221, 0xF4},
-	{0x0222, 0x02}, /* cintr */
+	{0x0222, 0x02}, 
 	{0x0223, 0x6F},
 };
 
 static struct msm_camera_i2c_reg_conf s5k6a2ya_recommend_settings[] = {
-	/* analog setting */
-	/* These registers are for Factory use only. */
-	/* You don¡¯t have to change these registers arbitrarily */
-	{0x303E, 0x20}, /* VPIX */
-	{0x303F, 0x10}, /* VTG */
-	{0x3040, 0x40}, /* NTG */
-	{0x3041, 0x10}, /* VRG */
+	
+	
+	
+	{0x303E, 0x20}, 
+	{0x303F, 0x10}, 
+	{0x3040, 0x40}, 
+	{0x3041, 0x10}, 
 	{0x3310, 0x0C}, /* [3:2] nop_flob : must be written before streaming on */
 	{0x3074, 0x0E}, /* [3] f_lob_read_opt : must be written before streaming on */
-	{0x3017, 0x01}, /* cds_option for CFPN */
-	{0x3E33, 0x3C}, /* ts_x */
-	{0x3029, 0x0E}, /* tmc_gain */
-	{0x300D, 0x14}, /* ct_rmp_rst_start */
-	{0x300E, 0x8E}, /* ct_rmp_sig_start */
-	{0x301B, 0x08}, /* off_rst */
-	{0x305B, 0x9C}, /* adc_clp */
-	{0x3315, 0x5B}, /* adlc */
-	{0x3148, 0x00}, /* misc. */
-	{0x3149, 0x00}, /* misc. */
+	{0x3017, 0x01}, 
+	{0x3E33, 0x3C}, 
+	{0x3029, 0x0E}, 
+	{0x300D, 0x14}, 
+	{0x300E, 0x8E}, 
+	{0x301B, 0x08}, 
+	{0x305B, 0x9C}, 
+	{0x3315, 0x5B}, 
+	{0x3148, 0x00}, 
+	{0x3149, 0x00}, 
 
-	/* External clock target frequency setting */
-	{0x3E84, 0x18}, /* External clock frequency : 24MHz */
+	
+	{0x3E84, 0x18}, 
 	{0x3E85, 0x00},
 
-	/* PLL setting, Raw10, Frame rate 30.138fps */
-	/* MPLL : 620MHz */
-	{0x0820, 0x06}, /* M_PLL_P	24MHz / 6 = 4MHz */
-	{0x0821, 0x00}, /* M_PLL_M MSB */
-	{0x0822, 0x9B}, /* M_PLL_M LSB	4MHz x 155 = 620MHz */
-	{0x0823, 0x00}, /* M_PLL_S	732MHz / 2^0 = 620MHz */
+	
+	
+	{0x0820, 0x06}, 
+	{0x0821, 0x00}, 
+	{0x0822, 0x9B}, 
+	{0x0823, 0x00}, 
 
-	/* System clock divider setting */
-	{0x082A, 0x0A}, /* DIV_SYS */
-	{0x082B, 0x06}, /* DIV_DBR */
+	
+	{0x082A, 0x0A}, 
+	{0x082B, 0x06}, 
 
-	/* MIPI target frequency setting : 620.00MHz */
-	{0x0858, 0x02}, /* serial_clock_rate_mbps[31:24] */
-	{0x0859, 0x6C}, /* serial_clock_rate_mbps[23:16] */
-	{0x085A, 0x00}, /* serial_clock_rate_mbps[15: 8] */
-	{0x085B, 0x00}, /* serial_clock_rate_mbps[ 7: 0] */
+	
+	{0x0858, 0x02}, 
+	{0x0859, 0x6C}, 
+	{0x085A, 0x00}, 
+	{0x085B, 0x00}, 
 
+	
+	{0x0216, 0x00}, 
 
-
-	/* Mirror & flip setting */
-	{0x0216, 0x00}, /* image_orientation_A */
-
-	/* Analog binning setting */
-	{0x0800, 0x00}, /* binning mode_A */
+	
+	{0x0800, 0x00}, 
 };
 
 static struct v4l2_subdev_info s5k6a2ya_subdev_info[] = {
@@ -160,7 +165,7 @@ static struct v4l2_subdev_info s5k6a2ya_subdev_info[] = {
 	.fmt    = 1,
 	.order    = 0,
 	},
-	/* more can be supported, to be added later */
+	
 };
 
 static struct msm_camera_i2c_conf_array s5k6a2ya_init_conf[] = {
@@ -183,7 +188,7 @@ static struct msm_sensor_output_info_t s5k6a2ya_dimensions[] = {
 		.vt_pixel_clk = 62000000,
 		.op_pixel_clk = 62000000,
 		.binning_factor = 1,
-		/* Rawchip */
+		
 		.x_addr_start = 0,
 		.y_addr_start = 0,
 		.x_addr_end = 0x5BF,
@@ -202,7 +207,7 @@ static struct msm_sensor_output_info_t s5k6a2ya_dimensions[] = {
 		.vt_pixel_clk = 62000000,
 		.op_pixel_clk = 62000000,
 		.binning_factor = 1,
-		/* Rawchip */
+		
 		.x_addr_start = 0,
 		.y_addr_start = 0,
 		.x_addr_end = 0x5BF,
@@ -256,17 +261,42 @@ static struct msm_sensor_exp_gain_info_t s5k6a2ya_exp_gain_info = {
 	.coarse_int_time_addr = 0x222,
 	.global_gain_addr = 0x204,
 	.vert_offset = 4,
-	.min_vert = 4, /* min coarse integration time */ /* HTC Angie 20111019 - Fix FPS */
+	.min_vert = 4,  
 };
 
 static int s5k6a2ya_sensor_open_init(const struct msm_camera_sensor_info *data)
 {
-	return 0;
+	int rc = 0;
+
+	if (data->sensor_platform_info)
+		s5k6a2ya_s_ctrl.mirror_flip = data->sensor_platform_info->mirror_flip;
+
+	return rc;
+}
+
+static int s5k6a2ya_mirror_flip_setting(void)
+{
+	int rc = 0;
+	int value = 0;
+
+	if (s5k6a2ya_s_ctrl.mirror_flip == CAMERA_SENSOR_MIRROR_FLIP)
+		value = S5K6A2YA_ORIENTATION_MIRROR_FLIP;
+	else if (s5k6a2ya_s_ctrl.mirror_flip == CAMERA_SENSOR_MIRROR)
+		value = S5K6A2YA_ORIENTATION_MIRROR;
+	else if (s5k6a2ya_s_ctrl.mirror_flip == CAMERA_SENSOR_FLIP)
+		value = S5K6A2YA_ORIENTATION_FLIP;
+	else
+		value = S5K6A2YA_ORIENTATION_NORMAL_MODE;
+	rc = msm_camera_i2c_write(s5k6a2ya_s_ctrl.sensor_i2c_client,
+		S5K6A2YA_REG_ORIENTATION, value, MSM_CAMERA_I2C_BYTE_DATA);
+
+	pr_info("%s: mirror_flip: %d, rc = %d\n", __func__, s5k6a2ya_s_ctrl.mirror_flip, rc);
+	return rc;
 }
 
 static const char *s5k6a2yaVendor = "samsung";
 static const char *s5k6a2yaNAME = "s5k6a2ya";
-static const char *s5k6a2yaSize = "1.3M";
+static const char *s5k6a2yaSize = "1.6M";
 
 static ssize_t sensor_vendor_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -309,88 +339,127 @@ static struct msm_camera_i2c_client s5k6a2ya_sensor_i2c_client = {
 	.addr_type = MSM_CAMERA_I2C_WORD_ADDR,
 };
 
-int32_t s5k6a2ya_power_up(struct msm_sensor_ctrl_t *s_ctrl)//(const struct msm_camera_sensor_info *sdata)
+int32_t s5k6a2ya_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	int rc;
 	struct msm_camera_sensor_info *sdata = NULL;
-	pr_info("[CAM] %s\n", __func__);
+	pr_info("%s\n", __func__);
 
 	if (s_ctrl && s_ctrl->sensordata)
 		sdata = s_ctrl->sensordata;
 	else {
-		pr_err("[CAM] %s: s_ctrl sensordata NULL\n", __func__);
+		pr_err("%s: s_ctrl sensordata NULL\n", __func__);
 		return (-1);
 	}
 
 	if (sdata->camera_power_on == NULL) {
-		pr_err("[CAM] sensor platform_data didnt register\n");
+		pr_err("sensor platform_data didnt register\n");
 		return -EIO;
 	}
-
 	rc = sdata->camera_power_on();
 	if (rc < 0) {
-		pr_err("[CAM] %s failed to enable power\n", __func__);
-		return rc;
+		pr_err("%s failed to enable power\n", __func__);
+		goto enable_power_on_failed;
 	}
 
+#ifndef CONFIG_DISABLE_MCLK_RAWCHIP_TO_MAINCAM
+	if (!sdata->use_rawchip) {
+		rc = msm_camio_clk_enable(CAMIO_CAM_MCLK_CLK);
+		if (rc < 0) {
+			pr_err("%s: msm_camio_clk_enable failed:%d\n",
+			 __func__, rc);
+			goto enable_mclk_failed;
+		}
+	}
+
+	rc = msm_sensor_set_power_up(s_ctrl);
+
+	if (rc < 0) {
+		pr_err("%s msm_sensor_power_up failed\n", __func__);
+		goto set_sensor_power_up_failed;
+	}
+#else
 	rc = msm_camio_clk_enable(CAMIO_CAM_MCLK_CLK);
 	if (rc < 0) {
-		return rc;
+		pr_err("%s msm_camio_clk_enable failed\n", __func__);
+		goto enable_mclk_failed;
 	}
+#endif
 
 	s5k6a2ya_sensor_open_init(sdata);
-	pr_info("[CAM] %s end\n", __func__);
+	pr_info("%s end\n", __func__);
 
-	return rc;  /*msm_sensor_power_up(sdata)*/
+	return rc;
+
+#ifndef CONFIG_DISABLE_MCLK_RAWCHIP_TO_MAINCAM
+set_sensor_power_up_failed:
+	msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
+#endif
+enable_mclk_failed:
+	if (sdata->camera_power_off == NULL)
+		pr_err("sensor platform_data didnt register\n");
+	else
+		sdata->camera_power_off();
+enable_power_on_failed:
+	return rc;
 }
 
-int32_t s5k6a2ya_power_down(struct msm_sensor_ctrl_t *s_ctrl)//(const struct msm_camera_sensor_info *sdata)
+int32_t s5k6a2ya_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	int rc;
 	struct msm_camera_sensor_info *sdata = NULL;
-	pr_info("[CAM] %s\n", __func__);
+	pr_info("%s\n", __func__);
 
 	if (s_ctrl && s_ctrl->sensordata)
 		sdata = s_ctrl->sensordata;
 	else {
-		pr_err("[CAM] %s: s_ctrl sensordata NULL\n", __func__);
+		pr_err("%s: s_ctrl sensordata NULL\n", __func__);
 		return (-1);
 	}
 
 	if (sdata->camera_power_off == NULL) {
-		pr_err("[CAM] sensor platform_data didn't register\n");
+		pr_err(" sensor platform_data didn't register\n");
 		return -EIO;
 	}
-
-	msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
-
-	rc = msm_camio_probe_off(s_ctrl);
-	if (rc < 0) {
-		pr_err("[CAM] %s msm_camio_probe_off failed\n", __func__);
+#ifndef CONFIG_DISABLE_MCLK_RAWCHIP_TO_MAINCAM
+	if (!sdata->use_rawchip) {
+		rc = msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
+		if (rc < 0)
+			pr_err("%s: msm_camio_clk_disable failed:%d\n",
+				 __func__, rc);
 	}
+#else
+	rc = msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
+	if (rc < 0)
+		pr_err("%s: msm_camio_clk_disable failed:%d\n", __func__, rc);
+#endif
 
 	rc = sdata->camera_power_off();
 	if (rc < 0) {
-		pr_err("[CAM] %s failed to disable power\n", __func__);
-		return rc;
+		pr_err(" %s failed to disable power\n", __func__);
 	}
 
-	return rc;  /*msm_sensor_power_down(sdata);*/
+#ifndef CONFIG_DISABLE_MCLK_RAWCHIP_TO_MAINCAM
+	rc = msm_sensor_set_power_down(s_ctrl);
+	if (rc < 0)
+		pr_err("%s msm_sensor_power_down failed\n", __func__);
+#endif
+
+	return rc;  
 }
 
 int32_t s5k6a2ya_i2c_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
 	int	rc = 0;
-	pr_info("[CAM] %s\n", __func__);
+	pr_info("%s\n", __func__);
 	rc = msm_sensor_i2c_probe(client, id);
 	if(rc >= 0)
 		s5k6a2ya_sysfs_init();
-	pr_info("[CAM] %s: rc(%d)\n", __func__, rc);
+	pr_info("%s: rc(%d)\n", __func__, rc);
 	return rc;
 }
 
-// HTC_START
 static int s5k6a2ya_read_fuseid(struct sensor_cfg_data *cdata,
 	struct msm_sensor_ctrl_t *s_ctrl)
 {
@@ -400,15 +469,15 @@ static int s5k6a2ya_read_fuseid(struct sensor_cfg_data *cdata,
 
 	struct msm_camera_i2c_client *s5k6a2ya_msm_camera_i2c_client = s_ctrl->sensor_i2c_client;
 
-	pr_info("[CAM] %s: sensor OTP information:\n", __func__);
+	pr_info("%s: sensor OTP information:\n", __func__);
 
-	rc = msm_camera_i2c_write_b(s5k6a2ya_msm_camera_i2c_client, 0x3602, 0x00); /* Page select */
+	rc = msm_camera_i2c_write_b(s5k6a2ya_msm_camera_i2c_client, 0x3602, 0x00); 
 	if (rc < 0)
-		pr_info("[CAM] %s: i2c_write_b 0x3602 fail\n", __func__);
+		pr_info("%s: i2c_write_b 0x3602 fail\n", __func__);
 
-	rc = msm_camera_i2c_write_b(s5k6a2ya_msm_camera_i2c_client, 0x3600, 0x01); /* Read mode */
+	rc = msm_camera_i2c_write_b(s5k6a2ya_msm_camera_i2c_client, 0x3600, 0x01); 
 	if (rc < 0)
-		pr_info("[CAM] %s: i2c_write_b 0x3600 fail\n", __func__);
+		pr_info("%s: i2c_write_b 0x3600 fail\n", __func__);
 
 	mdelay(5);
 
@@ -416,7 +485,7 @@ static int s5k6a2ya_read_fuseid(struct sensor_cfg_data *cdata,
 		for (j = 0; j < 5; j++) {
 			rc = msm_camera_i2c_read_b(s5k6a2ya_msm_camera_i2c_client, 0x3604 + i + (10 * j), &value);
 			if (rc < 0)
-				pr_info("[CAM] %s: i2c_read_b %x fail\n", __func__, (0x3604 + i + (10 * j)));
+				pr_info("%s: i2c_read_b %x fail\n", __func__, (0x3604 + i + (10 * j)));
 			if (value != 00) {
 				OTP[i] = value;
 				break;
@@ -424,13 +493,13 @@ static int s5k6a2ya_read_fuseid(struct sensor_cfg_data *cdata,
 		}
 	}
 
-	rc = msm_camera_i2c_write_b(s5k6a2ya_msm_camera_i2c_client, 0x3600, 0x00); /* Finish */
+	rc = msm_camera_i2c_write_b(s5k6a2ya_msm_camera_i2c_client, 0x3600, 0x00); 
 	if (rc < 0)
-		pr_info("[CAM] %s: i2c_write_b 0x3600 fail\n", __func__);
+		pr_info("%s: i2c_write_b 0x3600 fail\n", __func__);
 
-	pr_info("[CAM] %s: Vender ID = 0x%x, Lens ID = 0x%x, Version = 0x%x\n", __func__,
+	pr_info("%s: Vender ID = 0x%x, Lens ID = 0x%x, Version = 0x%x\n", __func__,
 		OTP[0], OTP[1], OTP[2]);
-	pr_info("[CAM] %s: ModuleFuseID= %x%x%x%x%x%x%x\n", __func__,
+	pr_info("%s: ModuleFuseID= %x%x%x%x%x%x%x\n", __func__,
 		OTP[3], OTP[4], OTP[5], OTP[6], OTP[7], OTP[8], OTP[9]);
 
 	cdata->cfg.fuse.fuse_id_word1 = OTP[0] << 8 | OTP[1];
@@ -438,17 +507,40 @@ static int s5k6a2ya_read_fuseid(struct sensor_cfg_data *cdata,
 	cdata->cfg.fuse.fuse_id_word3 = OTP[5] << 8 | OTP[6];
 	cdata->cfg.fuse.fuse_id_word4 = OTP[7] << 8 | OTP[8];
 
-	pr_info("[CAM] %s: fuse->fuse_id_word1:0x%8x\n",
+	pr_info("%s: fuse->fuse_id_word1:0x%8x\n",
 		__func__, cdata->cfg.fuse.fuse_id_word1);
-	pr_info("[CAM] %s: fuse->fuse_id_word2:0x%8x\n",
+	pr_info("%s: fuse->fuse_id_word2:0x%8x\n",
 		__func__, cdata->cfg.fuse.fuse_id_word2);
-	pr_info("[CAM] %s: fuse->fuse_id_word3:0x%8x\n",
+	pr_info("%s: fuse->fuse_id_word3:0x%8x\n",
 		__func__, cdata->cfg.fuse.fuse_id_word3);
-	pr_info("[CAM] %s: fuse->fuse_id_word4:0x%8x\n",
+	pr_info("%s: fuse->fuse_id_word4:0x%8x\n",
 		__func__, cdata->cfg.fuse.fuse_id_word4);
 	return 0;
 }
-// HTC_END
+
+
+int32_t s5k6a2ya_sensor_setting(struct msm_sensor_ctrl_t *s_ctrl,
+			int update_type, int res) {
+
+	int rc = 0;
+	struct msm_camera_sensor_info *sdata = NULL;
+	pr_info("%s\n", __func__);
+
+	if (s_ctrl && s_ctrl->sensordata)
+		sdata = s_ctrl->sensordata;
+	else {
+		pr_err("%s: s_ctrl sensordata NULL\n", __func__);
+		return (-1);
+	}
+
+	rc = msm_sensor_setting(s_ctrl, update_type, res);
+	if (update_type == MSM_SENSOR_UPDATE_PERIODIC) {
+		s5k6a2ya_mirror_flip_setting();
+	}
+
+	return rc;
+}
+
 
 static const struct i2c_device_id s5k6a2ya_i2c_id[] = {
 	{SENSOR_NAME, (kernel_ulong_t)&s5k6a2ya_s_ctrl},
@@ -457,7 +549,7 @@ static const struct i2c_device_id s5k6a2ya_i2c_id[] = {
 
 static struct i2c_driver s5k6a2ya_i2c_driver = {
 	.id_table = s5k6a2ya_i2c_id,
-	.probe  = s5k6a2ya_i2c_probe,//msm_sensor_i2c_probe,
+	.probe  = s5k6a2ya_i2c_probe,
 	.driver = {
 		.name = SENSOR_NAME,
 	},
@@ -491,14 +583,14 @@ static struct msm_sensor_fn_t s5k6a2ya_func_tbl = {
 	.sensor_set_fps = msm_sensor_set_fps,
 	.sensor_write_exp_gain_ex = msm_sensor_write_exp_gain1_ex,
 	.sensor_write_snapshot_exp_gain_ex = msm_sensor_write_exp_gain1_ex,
-	.sensor_setting = msm_sensor_setting,
+	.sensor_setting = s5k6a2ya_sensor_setting,
 	.sensor_set_sensor_mode = msm_sensor_set_sensor_mode,
 	.sensor_mode_init = msm_sensor_mode_init,
 	.sensor_get_output_info = msm_sensor_get_output_info,
-	.sensor_config = msm_sensor_config,//s5k6a2ya_sensor_config,
+	.sensor_config = msm_sensor_config,
 	.sensor_power_up = s5k6a2ya_power_up,
 	.sensor_power_down = s5k6a2ya_power_down,
-	.sensor_i2c_read_fuseid = s5k6a2ya_read_fuseid, //HTC
+	.sensor_i2c_read_fuseid = s5k6a2ya_read_fuseid, 
 };
 
 static struct msm_sensor_reg_t s5k6a2ya_regs = {
@@ -537,5 +629,5 @@ static struct msm_sensor_ctrl_t s5k6a2ya_s_ctrl = {
 };
 
 module_init(msm_sensor_init_module);
-MODULE_DESCRIPTION("Samsung 1.3 MP Bayer sensor driver");
+MODULE_DESCRIPTION("Samsung 1.6 MP Bayer sensor driver");
 MODULE_LICENSE("GPL v2");

@@ -16,14 +16,76 @@
 #include <linux/vmalloc.h>
 #include <mach/board.h>
 #include <mach/rpm.h>
-#include <mach/rpm-8930.h>
+#ifdef CONFIG_PERFLOCK
+#include <mach/perflock.h>
+#endif
+#include <mach/rpm-8960.h>
+#include <mach/rpm-8064.h>
 #include <mach/msm_xo.h>
-#include <mach/htc_util.h>
+#include <linux/gpio.h>
+#include <asm/system_info.h>
+#include <linux/tick.h>
+
+#include "board-monarudo.h"
 #define HTC_PM_STATSTIC_DELAY			10000
 
-#ifndef arch_idle_time
-#define arch_idle_time(cpu) 0
+#ifdef arch_idle_time
+
+static cputime64_t get_idle_time(int cpu)
+{
+	cputime64_t idle;
+
+	idle = kcpustat_cpu(cpu).cpustat[CPUTIME_IDLE];
+	if (cpu_online(cpu) && !nr_iowait_cpu(cpu))
+		idle += arch_idle_time(cpu);
+	return idle;
+}
+
+static cputime64_t get_iowait_time(int cpu)
+{
+	cputime64_t iowait;
+
+	iowait = kcpustat_cpu(cpu).cpustat[CPUTIME_IOWAIT];
+	if (cpu_online(cpu) && nr_iowait_cpu(cpu))
+		iowait += arch_idle_time(cpu);
+	return iowait;
+}
+
+#else
+
+static u64 get_idle_time(int cpu)
+{
+	u64 idle, idle_time = get_cpu_idle_time_us(cpu, NULL);
+
+	if (idle_time == -1ULL)
+		
+		idle = kcpustat_cpu(cpu).cpustat[CPUTIME_IDLE];
+	else
+		idle = usecs_to_cputime64(idle_time);
+
+	return idle;
+}
+
+static u64 get_iowait_time(int cpu)
+{
+	u64 iowait, iowait_time = get_cpu_iowait_time_us(cpu, NULL);
+
+	if (iowait_time == -1ULL)
+		
+		iowait = kcpustat_cpu(cpu).cpustat[CPUTIME_IOWAIT];
+	else
+		iowait = usecs_to_cputime64(iowait_time);
+
+	return iowait;
+}
+
 #endif
+
+
+extern void htc_print_active_wake_locks(int type);
+extern void htc_show_interrupts(void);
+extern void htc_timer_stats_onoff(char onoff);
+extern void htc_timer_stats_show(u16 water_mark);
 
 static int msm_htc_util_delay_time = HTC_PM_STATSTIC_DELAY;
 module_param_named(
@@ -33,6 +95,8 @@ module_param_named(
 static struct workqueue_struct *htc_pm_monitor_wq = NULL;
 struct delayed_work htc_pm_delayed_work;
 
+static spinlock_t lock;
+
 void htc_xo_vddmin_stat_show(void);
 void htc_kernel_top(void);
 
@@ -41,14 +105,12 @@ uint64_t previous_xo_time = 0;
 uint32_t previous_vddmin_count = 0;
 uint64_t previous_vddmin_time = 0;
 
-static spinlock_t lock;
-
 struct st_htc_idle_statistic {
 	u32 count;
 	u32 time;
 };
 
-struct st_htc_idle_statistic htc_idle_Stat[CONFIG_NR_CPUS][3] ;
+struct st_htc_idle_statistic htc_idle_Stat[CONFIG_NR_CPUS][3];
 
 void htc_idle_stat_clear(void)
 {
@@ -79,6 +141,68 @@ void htc_idle_stat_add(int sleep_mode, u32 time)
 	}
 }
 
+void htc_idle_stat_show(u32 total_time)
+{
+	int i = 0, cpu = 0;
+	u32 idle_time = 0;
+	total_time *= 1000;
+
+	printk("[K] cpu_id\tcpu_state\tidle_count\tidle_time\n");
+	for (cpu = 0; cpu < CONFIG_NR_CPUS; cpu++) {
+		for (i = 0; i < 3 ; i++) {
+			if (htc_idle_Stat[cpu][i].count) {
+				idle_time += htc_idle_Stat[cpu][i].time;
+				printk("[K]\t%d\tC%d\t\t%d\t\t%dms\n"
+					,cpu , i, htc_idle_Stat[cpu][i].count, htc_idle_Stat[cpu][i].time / 1000);
+			}
+		}
+	}
+	htc_xo_vddmin_stat_show();
+	msm_rpm_dump_stat();
+}
+
+#if 0
+static DECLARE_BITMAP(msm_pm_clocks_no_tcxo_shutdown, MAX_NR_CLKS);
+#endif
+u32 count_xo_block_clk_array[MAX_NR_CLKS] = {0};
+void htc_xo_block_clks_count_clear(void)
+{
+	memset(count_xo_block_clk_array, 0, sizeof(count_xo_block_clk_array));
+}
+void htc_xo_block_clks_count(void)
+{
+#if 0
+	int ret, i;
+	ret = msm_clock_require_tcxo(msm_pm_clocks_no_tcxo_shutdown, MAX_NR_CLKS);
+	if (ret) {
+		int blk_xo = 0;
+		for_each_set_bit(i, msm_pm_clocks_no_tcxo_shutdown, MAX_NR_CLKS) {
+			blk_xo = local_clk_src_xo(i);
+			if (blk_xo)
+				count_xo_block_clk_array[i]++;
+		}
+	}
+#endif
+}
+
+void htc_xo_block_clks_count_show(void)
+{
+#if 0
+	int ret, i;
+	ret = msm_clock_require_tcxo(msm_pm_clocks_no_tcxo_shutdown, MAX_NR_CLKS);
+	if (ret) {
+		char clk_name[20] = "\0";
+		for_each_set_bit(i, msm_pm_clocks_no_tcxo_shutdown, MAX_NR_CLKS) {
+			if (count_xo_block_clk_array[i] > 0) {
+				clk_name[0] = '\0';
+				ret = msm_clock_get_name_noirq(i, clk_name, sizeof(clk_name));
+				pr_info("%s (id=%d): %d\n", clk_name, ret, count_xo_block_clk_array[i]);
+			}
+		}
+	}
+#endif
+}
+
 void htc_xo_vddmin_stat_show(void)
 {
 	uint32_t xo_count = 0;
@@ -99,37 +223,10 @@ void htc_xo_vddmin_stat_show(void)
 	}
 }
 
-void htc_idle_stat_show(u32 total_time)
+void htc_print_vddmin_gpio_status(void)
 {
-	int i = 0, cpu = 0;
-	u32 idle_time = 0;
-
-	printk("[K] cpu_id\t\tcpu_state\tidle_count\tidle_time\n");
-	for (cpu = 0; cpu < CONFIG_NR_CPUS; cpu++) {
-		for (i = 0; i < 3 ; i++) {
-			if (htc_idle_Stat[cpu][i].count) {
-				idle_time += htc_idle_Stat[cpu][i].time;
-				printk("[K]    %d\t\tC%d\t\t%d\t\t%dms\n"
-					,cpu , i, htc_idle_Stat[cpu][i].count, htc_idle_Stat[cpu][i].time / 1000);
-			}
-		}
-	}
-	htc_xo_vddmin_stat_show();
-	msm_rpm_dump_stat();
-}
-
-u32 count_xo_block_clk_array[MAX_NR_CLKS] = {0};
-void htc_xo_block_clks_count_clear(void)
-{
-	memset(count_xo_block_clk_array, 0, sizeof(count_xo_block_clk_array));
-}
-
-void htc_xo_block_clks_count(void)
-{
-}
-
-void htc_xo_block_clks_count_show(void)
-{
+	if (system_rev == XB || system_rev == XC)
+		printk(KERN_INFO "[K] AP2MDM_VDDMIN: %d, MDM2AP_VDDMIN: %d. \n", gpio_get_value(AP2MDM_VDDMIN), gpio_get_value(MDM2AP_VDDMIN));
 }
 
 void htc_pm_monitor_work(struct work_struct *work)
@@ -137,13 +234,16 @@ void htc_pm_monitor_work(struct work_struct *work)
 	struct timespec ts;
 	struct rtc_time tm;
 
-	if (htc_pm_monitor_wq == NULL)
+	if (htc_pm_monitor_wq == NULL){
+		printk(KERN_INFO "[K] hTc PM statistic is NILL.\n");
 		return;
+	}
 
 	getnstimeofday(&ts);
 	rtc_time_to_tm(ts.tv_sec - (sys_tz.tz_minuteswest * 60), &tm);
 	printk("[K] [PM] hTC PM Statistic start (%02d-%02d %02d:%02d:%02d) \n",
 		tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
 	htc_show_interrupts();
 	htc_xo_block_clks_count_show();
 	htc_xo_block_clks_count_clear();
@@ -151,13 +251,17 @@ void htc_pm_monitor_work(struct work_struct *work)
 	htc_idle_stat_show(msm_htc_util_delay_time);
 	htc_idle_stat_clear();
 	htc_timer_stats_onoff('0');
-	htc_timer_stats_show(300);/*Show timer events which greater than 300 every 10 sec*/
+	htc_timer_stats_show(300);
 	htc_timer_stats_onoff('1');
-	htc_print_active_wake_locks(WAKE_LOCK_IDLE);
+#ifdef CONFIG_PERFLOCK
+	htc_print_active_perf_locks();
+#endif
+	
+	
 	htc_print_active_wake_locks(WAKE_LOCK_SUSPEND);
+	htc_print_vddmin_gpio_status();
 
 	queue_delayed_work(htc_pm_monitor_wq, &htc_pm_delayed_work, msecs_to_jiffies(msm_htc_util_delay_time));
-
 	htc_kernel_top();
 	printk("[K] [PM] hTC PM Statistic done\n");
 }
@@ -166,11 +270,10 @@ static u32 full_loading_counter = 0;
 
 #define MAX_PID 32768
 #define NUM_BUSY_THREAD_CHECK 5
-/* Previous process state */
 unsigned int *prev_proc_stat = NULL;
 int *curr_proc_delta = NULL;
 struct task_struct **task_ptr_array = NULL;
-struct cpu_usage_stat  new_cpu_stat, old_cpu_stat;
+struct kernel_cpustat new_cpu_stat, old_cpu_stat;
 
 int findBiggestInRange(int *array, int max_limit_idx)
 {
@@ -184,7 +287,6 @@ int findBiggestInRange(int *array, int max_limit_idx)
 	return largest_idx;
 }
 
-/* sorting from large to small */
 void sorting(int *source, int *output)
 {
 	int i;
@@ -196,44 +298,26 @@ void sorting(int *source, int *output)
 	}
 }
 
-/* Sync fs/proc/stat.c to caculate all cpu statistics */
-static void get_all_cpu_stat(struct cpu_usage_stat *cpu_stat)
+static void get_all_cpu_stat(struct kernel_cpustat *cpu_stat)
 {
 	int i;
-	cputime64_t user, nice, system, idle, iowait, irq, softirq, steal;
-	cputime64_t guest, guest_nice;
 
 	if (!cpu_stat)
 		return;
-
-	user = nice = system = idle = iowait =
-		irq = softirq = steal = cputime64_zero;
-	guest = guest_nice = cputime64_zero;
+	memset(cpu_stat, 0, sizeof(struct kernel_cpustat));
 
 	for_each_possible_cpu(i) {
-		user = cputime64_add(user, kstat_cpu(i).cpustat.user);
-		nice = cputime64_add(nice, kstat_cpu(i).cpustat.nice);
-		system = cputime64_add(system, kstat_cpu(i).cpustat.system);
-		idle = cputime64_add(idle, kstat_cpu(i).cpustat.idle);
-		idle = cputime64_add(idle, arch_idle_time(i));
-		iowait = cputime64_add(iowait, kstat_cpu(i).cpustat.iowait);
-		irq = cputime64_add(irq, kstat_cpu(i).cpustat.irq);
-		softirq = cputime64_add(softirq, kstat_cpu(i).cpustat.softirq);
-		steal = cputime64_add(steal, kstat_cpu(i).cpustat.steal);
-		guest = cputime64_add(guest, kstat_cpu(i).cpustat.guest);
-		guest_nice = cputime64_add(guest_nice,
-			kstat_cpu(i).cpustat.guest_nice);
+		cpu_stat->cpustat[CPUTIME_USER] += kcpustat_cpu(i).cpustat[CPUTIME_USER];
+		cpu_stat->cpustat[CPUTIME_NICE] += kcpustat_cpu(i).cpustat[CPUTIME_NICE];
+		cpu_stat->cpustat[CPUTIME_SYSTEM] += kcpustat_cpu(i).cpustat[CPUTIME_SYSTEM];
+		cpu_stat->cpustat[CPUTIME_IDLE] += get_idle_time(i);
+		cpu_stat->cpustat[CPUTIME_IOWAIT] += get_iowait_time(i);
+		cpu_stat->cpustat[CPUTIME_IRQ] += kcpustat_cpu(i).cpustat[CPUTIME_IRQ];
+		cpu_stat->cpustat[CPUTIME_SOFTIRQ] += kcpustat_cpu(i).cpustat[CPUTIME_SOFTIRQ];
+		cpu_stat->cpustat[CPUTIME_STEAL] += kcpustat_cpu(i).cpustat[CPUTIME_STEAL];
+		cpu_stat->cpustat[CPUTIME_GUEST] += kcpustat_cpu(i).cpustat[CPUTIME_GUEST];
+		cpu_stat->cpustat[CPUTIME_GUEST_NICE] += kcpustat_cpu(i).cpustat[CPUTIME_GUEST_NICE];
 	}
-	cpu_stat->user = user;
-	cpu_stat->nice = nice;
-	cpu_stat->system = system;
-	cpu_stat->softirq = softirq;
-	cpu_stat->irq = irq;
-	cpu_stat->idle = idle;
-	cpu_stat->iowait = iowait;
-	cpu_stat->steal = steal;
-	cpu_stat->guest = guest;
-	cpu_stat->guest_nice = guest_nice;
 }
 
 void htc_kernel_top(void)
@@ -254,7 +338,7 @@ void htc_kernel_top(void)
 	spin_lock_irqsave(&lock, flags);
 	get_all_cpu_stat(&new_cpu_stat);
 
-	/* calculate the cpu time of each process */
+	
 	for_each_process(p) {
 		thread_group_cputime(p, &cputime);
 
@@ -266,45 +350,41 @@ void htc_kernel_top(void)
 		}
 	}
 
-	/* sorting to get the top cpu consumers */
+	
 	sorting(curr_proc_delta, top_loading);
 
-	/* calculate the total delta time */
-	user_time = (unsigned long)((new_cpu_stat.user + new_cpu_stat.nice)
-			- (old_cpu_stat.user + old_cpu_stat.nice));
-	system_time = (unsigned long)(new_cpu_stat.system - old_cpu_stat.system);
-	io_time = (unsigned long)(new_cpu_stat.iowait - old_cpu_stat.iowait);
-	irq_time = (unsigned long)((new_cpu_stat.irq + new_cpu_stat.softirq)
-			- (old_cpu_stat.irq + old_cpu_stat.softirq));
+	
+	user_time = (unsigned long)((new_cpu_stat.cpustat[CPUTIME_USER] + new_cpu_stat.cpustat[CPUTIME_NICE])
+			- (old_cpu_stat.cpustat[CPUTIME_USER] + old_cpu_stat.cpustat[CPUTIME_NICE]));
+	system_time = (unsigned long)(new_cpu_stat.cpustat[CPUTIME_SYSTEM] - old_cpu_stat.cpustat[CPUTIME_SYSTEM]);
+	io_time = (unsigned long)(new_cpu_stat.cpustat[CPUTIME_IOWAIT] - old_cpu_stat.cpustat[CPUTIME_IOWAIT]);
+	irq_time = (unsigned long)((new_cpu_stat.cpustat[CPUTIME_IRQ] + new_cpu_stat.cpustat[CPUTIME_SOFTIRQ])
+			- (old_cpu_stat.cpustat[CPUTIME_IRQ] + old_cpu_stat.cpustat[CPUTIME_SOFTIRQ]));
 	idle_time = (unsigned long)
-	((new_cpu_stat.idle + new_cpu_stat.steal + new_cpu_stat.guest)
-	 - (old_cpu_stat.idle + old_cpu_stat.steal + old_cpu_stat.guest));
+	((new_cpu_stat.cpustat[CPUTIME_IDLE] + new_cpu_stat.cpustat[CPUTIME_STEAL] + new_cpu_stat.cpustat[CPUTIME_GUEST])
+	 - (old_cpu_stat.cpustat[CPUTIME_IDLE] + old_cpu_stat.cpustat[CPUTIME_STEAL] + old_cpu_stat.cpustat[CPUTIME_GUEST]));
 	delta_time = user_time + system_time + io_time + irq_time + idle_time;
 
-	/*
-	 * Check if we need to dump the call stack of top CPU consumers
-	 * If CPU usage keeps 100% for 90 secs
-	 */
 	if ((full_loading_counter >= 9) && (full_loading_counter % 3 == 0))
 		 dump_top_stack = 1;
 
-	/* print most time consuming processes */
+	
 	printk("[K] CPU Usage\t\tPID\t\tName\n");
 	for (i = 0 ; i < NUM_BUSY_THREAD_CHECK ; i++) {
-		printk("[K] %lu%%\t\t%d\t\t%s\t\t\t%d\n",
+		printk("[K] %8lu%%\t\t%d\t\t%s\t\t%d\n",
 				curr_proc_delta[top_loading[i]] * 100 / delta_time,
 				top_loading[i],
 				task_ptr_array[top_loading[i]]->comm,
 				curr_proc_delta[top_loading[i]]);
 	}
 
-	/* check if dump busy thread stack */
+	
 	if (dump_top_stack) {
 	   struct task_struct *t;
 	   for (i = 0 ; i < NUM_BUSY_THREAD_CHECK ; i++) {
 		if (task_ptr_array[top_loading[i]] != NULL && task_ptr_array[top_loading[i]]->stime > 0) {
 			t = task_ptr_array[top_loading[i]];
-			/* dump all the thread stack of this process */
+			
 			do {
 				printk("\n[K] ###pid:%d name:%s state:%lu ppid:%d stime:%lu utime:%lu\n",
 				t->pid, t->comm, t->state, t->real_parent->pid, t->stime, t->utime);
@@ -314,7 +394,7 @@ void htc_kernel_top(void)
 		}
 	   }
 	}
-	/* save old values */
+	
 	for_each_process(p) {
 		if (p->pid < MAX_PID) {
 			thread_group_cputime(p, &cputime);
@@ -328,7 +408,6 @@ void htc_kernel_top(void)
 	memset(task_ptr_array, 0, sizeof(int) * MAX_PID);
 
 	spin_unlock_irqrestore(&lock, flags);
-
 }
 
 void htc_pm_monitor_init(void)
@@ -350,18 +429,22 @@ void htc_pm_monitor_init(void)
 
 	get_all_cpu_stat(&new_cpu_stat);
 	get_all_cpu_stat(&old_cpu_stat);
+
 }
+
 
 
 void htc_monitor_init(void)
 {
 	if (htc_pm_monitor_wq == NULL) {
-		/* Create private workqueue... */
+		
 		htc_pm_monitor_wq = create_workqueue("htc_pm_monitor_wq");
 		printk(KERN_INFO "[K] Create HTC private workqueue(0x%x)...\n", (unsigned int)htc_pm_monitor_wq);
 	}
 
-	if (htc_pm_monitor_wq)
+	if (htc_pm_monitor_wq){
+		printk(KERN_INFO "[K] htc_pm_monitor_wq is not NULL.\n");
 		INIT_DELAYED_WORK(&htc_pm_delayed_work, htc_pm_monitor_work);
+	}
 }
 

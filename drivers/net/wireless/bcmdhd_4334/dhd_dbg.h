@@ -32,7 +32,7 @@
 #define DHD_DEFAULT(args)   do {if ((dhd_msg_level & DHD_ERROR_VAL) && (net_ratelimit())) \
 							    printf args;} while (0)
 #define DHD_ERROR(args)	       do {if ((dhd_msg_level & DHD_ERROR_VAL) && (net_ratelimit())) \
-									wrnprintf args;} while (0)
+									printf args;} while (0)
 #define DHD_TRACE(args)		do {if (dhd_msg_level & DHD_TRACE_VAL) printf args;} while (0)
 #define DHD_INFO(args)		do {if (dhd_msg_level & DHD_INFO_VAL) printf args;} while (0)
 #define DHD_DATA(args)		do {if (dhd_msg_level & DHD_DATA_VAL) printf args;} while (0)
@@ -63,11 +63,12 @@
 #define DHD_ISCAN_ON()		(dhd_msg_level & DHD_ISCAN_VAL)
 #define DHD_ARPOE_ON()		(dhd_msg_level & DHD_ARPOE_VAL)
 #define DHD_REORDER_ON()	(dhd_msg_level & DHD_REORDER_VAL)
+#define DHD_NOCHECKDIED_ON()	(dhd_msg_level & DHD_NOCHECKDIED_VAL)
 
-#else /* defined(BCMDBG) || defined(DHD_DEBUG) */
+#else 
 
 #define DHD_DEFAULT(args)   do {if (net_ratelimit()) printf args;} while (0)
-#define DHD_ERROR(args)    	do {if (net_ratelimit()) wrnprintf args;} while (0)
+#define DHD_ERROR(args)    	do {if (net_ratelimit()) printf args;} while (0)
 #define DHD_TRACE(args)
 #define DHD_INFO(args)
 #define DHD_DATA(args)
@@ -98,6 +99,7 @@
 #define DHD_ISCAN_ON()		0
 #define DHD_ARPOE_ON()		0
 #define DHD_REORDER_ON()	0
+#define DHD_NOCHECKDIED_ON()	0
 #endif 
 
 #define DHD_LOG(args)
@@ -107,7 +109,6 @@
 #define DHD_NONE(args)
 extern int dhd_msg_level;
 
-/* Defines msg bits */
 #include <dhdioctl.h>
 
-#endif /* _dhd_dbg_ */
+#endif 

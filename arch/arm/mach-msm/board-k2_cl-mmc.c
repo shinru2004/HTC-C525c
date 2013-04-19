@@ -36,7 +36,9 @@
 
 #include "devices.h"
 #include "board-k2_cl.h"
-#include "proc_comm.h"
+#include <mach/proc_comm.h>
+#include <linux/export.h>
+
 #include "board-k2_cl-mmc.h"
 
 #include <mach/rpm.h>
@@ -45,91 +47,30 @@
 
 int msm_proc_comm(unsigned cmd, unsigned *data1, unsigned *data2);
 
-/* ---- PM QOS ---- 
-static struct msm_rpmrs_level msm_rpmrs_levels[] = {
-	{
-		MSM_PM_SLEEP_MODE_WAIT_FOR_INTERRUPT,
-		MSM_RPMRS_LIMITS(ON, ACTIVE, MAX, ACTIVE),
-		true,
-		1, 8000, 100000, 1,
-	},
 
-	{
-		MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE,
-		MSM_RPMRS_LIMITS(ON, ACTIVE, MAX, ACTIVE),
-		true,
-		1500, 5000, 60100000, 3000,
-	},
-
-	{
-		MSM_PM_SLEEP_MODE_POWER_COLLAPSE,
-		MSM_RPMRS_LIMITS(ON, ACTIVE, MAX, ACTIVE),
-		false,
-		1800, 5000, 60350000, 3500,
-	},
-	{
-		MSM_PM_SLEEP_MODE_POWER_COLLAPSE,
-		MSM_RPMRS_LIMITS(OFF, ACTIVE, MAX, ACTIVE),
-		false,
-		3800, 4500, 65350000, 5500,
-	},
-
-	{
-		MSM_PM_SLEEP_MODE_POWER_COLLAPSE,
-		MSM_RPMRS_LIMITS(ON, HSFS_OPEN, MAX, ACTIVE),
-		false,
-		2800, 2500, 66850000, 4800,
-	},
-
-	{
-		MSM_PM_SLEEP_MODE_POWER_COLLAPSE,
-		MSM_RPMRS_LIMITS(OFF, HSFS_OPEN, MAX, ACTIVE),
-		false,
-		4800, 2000, 71850000, 6800,
-	},
-
-	{
-		MSM_PM_SLEEP_MODE_POWER_COLLAPSE,
-		MSM_RPMRS_LIMITS(OFF, HSFS_OPEN, ACTIVE, RET_HIGH),
-		false,
-		6800, 500, 75850000, 8800,
-	},
-
-	{
-		MSM_PM_SLEEP_MODE_POWER_COLLAPSE,
-		MSM_RPMRS_LIMITS(OFF, HSFS_OPEN, RET_HIGH, RET_LOW),
-		false,
-		7800, 0, 76350000, 9800,
-	},
-};
-*/
-
-/* Macros assume PMIC GPIOs start at 0 */
 #define PM8058_GPIO_BASE			NR_MSM_GPIOS
 #define PM8058_GPIO_PM_TO_SYS(pm_gpio)		(pm_gpio + PM8058_GPIO_BASE)
 #define PM8058_GPIO_SYS_TO_PM(sys_gpio)		(sys_gpio - PM8058_GPIO_BASE)
 
-/* ---- SDCARD ---- */
-/* ---- WIFI ---- */
 
 static uint32_t wifi_on_gpio_table[] = {
-	GPIO_CFG(MSM_WIFI_SD_D3, 2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_8MA), /* DAT3 */
-	GPIO_CFG(MSM_WIFI_SD_D2, 2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_8MA), /* DAT2 */
-	GPIO_CFG(MSM_WIFI_SD_D1, 2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_8MA), /* DAT1 */
-	GPIO_CFG(MSM_WIFI_SD_D0, 2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_8MA), /* DAT0 */
-	GPIO_CFG(MSM_WIFI_SD_CMD, 2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_8MA), /* CMD */
-	GPIO_CFG(MSM_WCN_CMD_CLK, 2, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), /* CLK */
-	GPIO_CFG(MSM_WL_HOST_WAKE, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA), /* WLAN IRQ */
+	GPIO_CFG(MSM_WIFI_SD_D3, 2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WIFI_SD_D2, 2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WIFI_SD_D1, 2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WIFI_SD_D0, 2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WIFI_SD_CMD, 2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WCN_CMD_CLK, 2, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WL_HOST_WAKE, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA), 
 };
 
 static uint32_t wifi_off_gpio_table[] = {
-	GPIO_CFG(MSM_WIFI_SD_D3, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), /* DAT3 */
-	GPIO_CFG(MSM_WIFI_SD_D2, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), /* DAT2 */
-	GPIO_CFG(MSM_WIFI_SD_D1, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), /* DAT1 */
-	GPIO_CFG(MSM_WIFI_SD_D0, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), /* DAT0 */
-	GPIO_CFG(MSM_WIFI_SD_CMD, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), /* CMD */
-	GPIO_CFG(MSM_WCN_CMD_CLK, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), /* CLK */
-	GPIO_CFG(MSM_WL_HOST_WAKE, 0, GPIO_CFG_INPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), /* WLAN IRQ */
+	GPIO_CFG(MSM_WIFI_SD_D3, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WIFI_SD_D2, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WIFI_SD_D1, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WIFI_SD_D0, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WIFI_SD_CMD, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WCN_CMD_CLK, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_8MA), 
+	GPIO_CFG(MSM_WL_HOST_WAKE, 0, GPIO_CFG_INPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), 
 };
 
 static void config_gpio_table(uint32_t *table, int len)
@@ -144,9 +85,6 @@ static void config_gpio_table(uint32_t *table, int len)
 	}
 }
 
-/* BCM4329 returns wrong sdio_vsn(1) when we read cccr,
- * we use predefined value (sdio_vsn=2) here to initial sdio driver well
- */
 static struct embedded_sdio_data k2_cl_wifi_emb_data = {
 	.cccr	= {
 		.sdio_vsn	= 2,
@@ -173,7 +111,7 @@ k2_cl_wifi_status_register(void (*callback)(int card_present, void *dev_id),
 	return 0;
 }
 
-static int k2_cl_wifi_cd;	/* WiFi virtual 'card detect' status */
+static int k2_cl_wifi_cd;	
 
 static unsigned int k2_cl_wifi_status(struct device *dev)
 {
@@ -197,7 +135,6 @@ static struct mmc_platform_data k2_cl_wifi_data = {
 			MMC_CAP_UHS_SDR50),
 	.msm_bus_voting_data = &sps_to_ddr_bus_voting_data,
 	.nonremovable   = 0,
-	.pclk_src_dfab	= 1,
 };
 
 
@@ -229,12 +166,10 @@ int k2_cl_wifi_power(int on)
 	}
 
 	htc_wifi_bt_sleep_clk_ctl(on, ID_WIFI);
-	mdelay(1);/*Delay 1 ms, Recommand by Hardware*/
-	gpio_set_value(MSM_WL_REG_ON, on); /* WIFI_SHUTDOWN */
+	mdelay(1);
+	gpio_set_value(MSM_WL_REG_ON, on); 
 	mdelay(1);
 	gpio_set_value(MSM_WL_DEV_WAKE, on);
-	mdelay(1);
-	gpio_set_value(MSM_V_WL_IO_1V8_EN, on);
 
 	mdelay(120);
 	return 0;
@@ -305,7 +240,6 @@ static struct msm_rpmrs_level msm_rpmrs_levels[] __initdata = {
 	},
 };
 
-/* ---- MMC ---- */
 int __init k2_cl_init_mmc()
 {
 	uint32_t id;
@@ -314,9 +248,9 @@ int __init k2_cl_init_mmc()
 
 	printk(KERN_INFO "k2_cl: %s\n", __func__);
 
-	/* SDC4: WiFi */
+	
 
-#if 1 /* Temp solution to turn on sleep clock, remove this after GPIO conflict is resolved */
+#if 1 
 
 	pm_config.direction = PM_GPIO_DIR_OUT;
 	pm_config.output_buffer = PM_GPIO_OUT_BUF_CMOS;
@@ -331,25 +265,20 @@ int __init k2_cl_init_mmc()
 	mdelay(5);
 #endif
 
-	/* initial WIFI IO 1V8 */
-	id = GPIO_CFG(MSM_V_WL_IO_1V8_EN, 0, GPIO_CFG_OUTPUT,
-		GPIO_CFG_NO_PULL, GPIO_CFG_2MA);
-	gpio_tlmm_config(id, 0);
-	gpio_set_value(MSM_V_WL_IO_1V8_EN, 1);
-
-	/* initial WL_DEV_WAKE (CPU wakeup wifi) */
+	
+	
 	id = GPIO_CFG(MSM_WL_DEV_WAKE, 0, GPIO_CFG_OUTPUT,
 		GPIO_CFG_NO_PULL, GPIO_CFG_2MA);
 	gpio_tlmm_config(id, 0);
 	gpio_set_value(MSM_WL_DEV_WAKE, 1);
 
-	/* initial WL_REG_ON (wifi wakeup CPU) */
+	
 	id = GPIO_CFG(MSM_WL_REG_ON, 0, GPIO_CFG_OUTPUT,
 		GPIO_CFG_NO_PULL, GPIO_CFG_2MA);
 	gpio_tlmm_config(id, 0);
 	gpio_set_value(MSM_WL_REG_ON, 0);
 
-	/* PM QoS for wifi*/
+	
 	k2_cl_wifi_data.cpu_dma_latency = msm_rpmrs_levels[0].latency_us;
 
 	msm_add_sdcc(4, &k2_cl_wifi_data);

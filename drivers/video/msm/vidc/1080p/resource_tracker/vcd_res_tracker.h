@@ -57,26 +57,24 @@ struct res_trk_context {
 	u32 mmu_clks_on;
 	u32 secure_session;
 	struct mutex secure_lock;
+	u32 sec_clk_heap;
 };
 
-/*HTC_START*/
 extern u32 vidc_msg_debug;
+
 #define VCDRES_MSG_LOW(xx_fmt...)			\
-    if (vidc_msg_debug) {				\
-	printk(KERN_INFO "\n\t* [VID] " xx_fmt);	\
-    }
-
+	if (vidc_msg_debug) {				\
+		printk(KERN_INFO "\n\t* [VID] " xx_fmt);\
+	}
 #define VCDRES_MSG_MED(xx_fmt...)			\
-    if (vidc_msg_debug) {				\
-	printk(KERN_INFO "\n  * [VID] " xx_fmt);	\
-    }
+	if (vidc_msg_debug) {				\
+		printk(KERN_INFO "\n  * [VID] " xx_fmt);\
+	}
 
-
-#define VCDRES_MSG_HIGH(xx_fmt...)	printk(KERN_WARNING "\n [VID]" xx_fmt)
+#define VCDRES_MSG_HIGH(xx_fmt...)	printk(KERN_WARNING "\n [VID] " xx_fmt)
 #define VCDRES_MSG_ERROR(xx_fmt...)	printk(KERN_ERR "\n [VID] err: " xx_fmt)
 #define VCDRES_MSG_FATAL(xx_fmt...)	printk(KERN_ERR "\n [VID] <FATAL> " xx_fmt)
-/*HTC_END*/
- 
+
 #ifdef CONFIG_MSM_BUS_SCALING
 int res_trk_update_bus_perf_level(struct vcd_dev_ctxt *dev_ctxt,
 				u32 perf_level);

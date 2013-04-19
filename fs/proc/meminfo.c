@@ -10,7 +10,7 @@
 #include <linux/seq_file.h>
 #include <linux/swap.h>
 #include <linux/vmstat.h>
-#include <asm/atomic.h>
+#include <linux/atomic.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include "internal.h"
@@ -29,17 +29,14 @@ void show_meminfo(void)
 	unsigned long pages[NR_LRU_LISTS];
 	int lru;
 	unsigned long ion_alloc  = ion_iommu_heap_dump_size();
-	unsigned long kgsl_alloc  = kgsl_get_alloc_size();
+	unsigned long kgsl_alloc = kgsl_get_alloc_size(1);
 	unsigned long subtotal;
 
-/*
- * display in kilobytes.
- */
 #define K(x) ((x) << (PAGE_SHIFT - 10))
 	si_meminfo(&i);
 	si_swapinfo(&i);
 	cached = global_page_state(NR_FILE_PAGES) -
-			total_swapcache_pages - i.bufferram;
+		total_swapcache_pages - i.bufferram;
 
 	if (cached < 0)
 		cached = 0;
@@ -55,34 +52,34 @@ void show_meminfo(void)
 		K(global_page_state(NR_SLAB_RECLAIMABLE) + global_page_state(NR_SLAB_UNRECLAIMABLE)) +
 		(global_page_state(NR_KERNEL_STACK) * THREAD_SIZE / 1024) +
 		K(global_page_state(NR_PAGETABLE)) +
-		(vmi.alloc >> 10) + (ion_alloc >> 10) + (kgsl_alloc >> 10);
+		(vmi.alloc >> 10) + (kgsl_alloc >> 10) + (ion_alloc >> 10);
 
 	printk("MemFree:        %8lu kB\n"
-		"Buffers:        %8lu kB\n"
-		"Cached:         %8lu kB\n"
-		"Shmem:          %8lu kB\n"
-		"Mlocked:        %8lu kB\n"
-		"AnonPages:      %8lu kB\n"
-		"Slab:           %8lu kB\n"
-		"PageTables:     %8lu kB\n"
-		"KernelStack:    %8lu kB\n"
-		"VmallocAlloc:   %8lu kB\n"
-		"ION_Alloc:      %8lu kB\n"
-		"Kgsl_Alloc:     %8lu kB\n"
-		"Subtotal:       %8lu kB\n",
-		K(i.freeram),
-		K(i.bufferram),
-		K(cached),
-		K(global_page_state(NR_SHMEM)),
-		K(global_page_state(NR_MLOCK)),
-		K(global_page_state(NR_ANON_PAGES)),
-		K(global_page_state(NR_SLAB_RECLAIMABLE) + global_page_state(NR_SLAB_UNRECLAIMABLE)),
-		K(global_page_state(NR_PAGETABLE)),
-		global_page_state(NR_KERNEL_STACK) * THREAD_SIZE / 1024,
-		(vmi.alloc >> 10),
-		(ion_alloc >> 10),
-		(kgsl_alloc >> 10),
-		subtotal);
+			"Buffers:        %8lu kB\n"
+			"Cached:         %8lu kB\n"
+			"Shmem:          %8lu kB\n"
+			"Mlocked:        %8lu kB\n"
+			"AnonPages:      %8lu kB\n"
+			"Slab:           %8lu kB\n"
+			"PageTables:     %8lu kB\n"
+			"KernelStack:    %8lu kB\n"
+			"VmallocAlloc:   %8lu kB\n"
+			"ION_Alloc:      %8lu kB\n"
+			"KGSL_Alloc:     %8lu kB\n"
+			"Subtotal:       %8lu kB\n",
+			K(i.freeram),
+			K(i.bufferram),
+			K(cached),
+			K(global_page_state(NR_SHMEM)),
+			K(global_page_state(NR_MLOCK)),
+			K(global_page_state(NR_ANON_PAGES)),
+			K(global_page_state(NR_SLAB_RECLAIMABLE) + global_page_state(NR_SLAB_UNRECLAIMABLE)),
+			K(global_page_state(NR_PAGETABLE)),
+			global_page_state(NR_KERNEL_STACK) * THREAD_SIZE / 1024,
+			(vmi.alloc >> 10),
+			(ion_alloc >> 10),
+			(kgsl_alloc >> 10),
+			subtotal);
 }
 
 static int meminfo_proc_show(struct seq_file *m, void *v)
@@ -94,13 +91,8 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	long cached;
 	unsigned long pages[NR_LRU_LISTS];
 	int lru;
-	unsigned long ion_alloc  = ion_iommu_heap_dump_size();
-	unsigned long kgsl_alloc  = kgsl_get_alloc_size();
-	unsigned long subtotal;
+	unsigned long kgsl_alloc = kgsl_get_alloc_size(0);
 
-/*
- * display in kilobytes.
- */
 #define K(x) ((x) << (PAGE_SHIFT - 10))
 	si_meminfo(&i);
 	si_swapinfo(&i);
@@ -110,7 +102,6 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 
 	cached = global_page_state(NR_FILE_PAGES) -
 			total_swapcache_pages - i.bufferram;
-
 	if (cached < 0)
 		cached = 0;
 
@@ -119,16 +110,6 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	for (lru = LRU_BASE; lru < NR_LRU_LISTS; lru++)
 		pages[lru] = global_page_state(NR_LRU_BASE + lru);
 
-	subtotal = K(i.freeram) + K(i.bufferram) +
-		K(cached) + K(global_page_state(NR_SHMEM)) + K(global_page_state(NR_MLOCK)) +
-		K(global_page_state(NR_ANON_PAGES)) +
-		K(global_page_state(NR_SLAB_RECLAIMABLE) + global_page_state(NR_SLAB_UNRECLAIMABLE)) +
-		(global_page_state(NR_KERNEL_STACK) * THREAD_SIZE / 1024) +
-		K(global_page_state(NR_PAGETABLE)) +
-		(vmi.alloc >> 10) + (ion_alloc >> 10) + (kgsl_alloc >> 10);
-	/*
-	 * Tagged format, for easy grepping and expansion.
-	 */
 	seq_printf(m,
 		"MemTotal:       %8lu kB\n"
 		"MemFree:        %8lu kB\n"
@@ -180,8 +161,8 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		"VmallocUserMap: %8lu kB\n"
 		"VmallocVpage:   %8lu kB\n"
 		"VmallocChunk:   %8lu kB\n"
-		"ION_Alloc:      %8lu kB\n"
-		"Kgsl_Alloc:     %8lu kB\n"
+		"KGSL_ALLOC:     %8lu kB\n"
+		"ION_ALLOC:      %8d kB\n"
 #ifdef CONFIG_MEMORY_FAILURE
 		"HardwareCorrupted: %5lu kB\n"
 #endif
@@ -246,8 +227,8 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		vmi.usermap >> 10,
 		vmi.vpages >> 10,
 		vmi.largest_chunk >> 10,
-		ion_alloc >> 10,
-		kgsl_alloc >> 10
+		kgsl_alloc >> 10,
+		ion_iommu_heap_dump_size() >> 10
 #ifdef CONFIG_MEMORY_FAILURE
 		,atomic_long_read(&mce_bad_pages) << (PAGE_SHIFT - 10)
 #endif

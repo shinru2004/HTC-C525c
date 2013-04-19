@@ -38,19 +38,13 @@ void vcd_do_device_state_transition(struct vcd_drv_ctxt *drv_ctxt,
 				  drv_ctxt, to_state);
 	}
 
-	if (!drv_ctxt)
-		return;
-
 	state_ctxt = &drv_ctxt->dev_state;
 
-	/* HTC_START (klockwork issue)*/
-	if (state_ctxt->state) {
 	if (state_ctxt->state == to_state) {
 		VCD_MSG_HIGH("Device already in requested to_state=%d",
 				 to_state);
 
 		return;
-	}
 	}
 
 	VCD_MSG_MED("vcd_do_device_state_transition: D%d -> D%d, for api %d",
@@ -333,7 +327,7 @@ u32 vcd_reset_device_context(struct vcd_drv_ctxt *drv_ctxt,
 		VCD_MSG_HIGH("HW Reset done");
 	} else {
 		VCD_MSG_FATAL("HW Reset failed");
-		}
+	}
 	(void)vcd_power_event(dev_ctxt, NULL, VCD_EVT_PWR_DEV_TERM_END);
 
 	return VCD_S_SUCCESS;
@@ -543,12 +537,12 @@ static u32 vcd_init_cmn
 	*driver_handle = 0;
 
 	driver_id = 0;
-	while (driver_id < VCD_DRIVER_INSTANCE_MAX &&
+	while (driver_id < VCD_DRIVER_CLIENTS_MAX &&
 		   dev_ctxt->driver_ids[driver_id]) {
 		++driver_id;
 	}
 
-	if (driver_id == VCD_DRIVER_INSTANCE_MAX) {
+	if (driver_id == VCD_DRIVER_CLIENTS_MAX) {
 		VCD_MSG_ERROR("Max driver instances reached");
 
 		return VCD_ERR_FAIL;
@@ -864,7 +858,7 @@ static u32 vcd_close_in_ready
 	} else {
 		VCD_MSG_ERROR("Unsupported API in client state %d",
 				  cctxt->clnt_state.state);
-
+		vcd_destroy_client_context(cctxt);
 		rc = VCD_ERR_BAD_STATE;
 	}
 
@@ -1076,7 +1070,7 @@ static void  vcd_hw_timeout_cmn(struct vcd_drv_ctxt *drv_ctxt,
 
 	vcd_handle_device_err_fatal(dev_ctxt, NULL);
 
-	/* Reset HW. */
+	
 	(void) vcd_reset_device_context(drv_ctxt,
 		DEVICE_STATE_EVENT_NUMBER(timeout));
 }

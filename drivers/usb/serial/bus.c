@@ -22,10 +22,6 @@ static int usb_serial_device_match(struct device *dev,
 	struct usb_serial_driver *driver;
 	const struct usb_serial_port *port;
 
-	/*
-	 * drivers are already assigned to ports in serial_probe so it's
-	 * a simple check here.
-	 */
 	port = to_usb_serial_port(dev);
 	if (!port)
 		return 0;
@@ -60,8 +56,6 @@ static int usb_serial_device_probe(struct device *dev)
 		retval = -ENODEV;
 		goto exit;
 	}
-	if (port->dev_state != PORT_REGISTERING)
-		goto exit;
 
 	driver = port->serial->type;
 	if (driver->port_probe) {
@@ -97,9 +91,6 @@ static int usb_serial_device_remove(struct device *dev)
 	port = to_usb_serial_port(dev);
 	if (!port)
 		return -ENODEV;
-
-	if (port->dev_state != PORT_UNREGISTERING)
-		return retval;
 
 	device_remove_file(&port->dev, &dev_attr_port_number);
 

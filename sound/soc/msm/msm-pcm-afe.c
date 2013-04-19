@@ -34,12 +34,10 @@
 #include "msm-pcm-afe.h"
 #include "msm-pcm-q6.h"
 
-//htc audio ++
 #undef pr_info
 #undef pr_err
 #define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
 #define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
-//htc audio --
 
 #define MIN_PERIOD_SIZE (128 * 2)
 #define MAX_PERIOD_SIZE (128 * 2 * 2 * 6)
@@ -48,7 +46,8 @@ static struct snd_pcm_hardware msm_afe_hardware = {
 				SNDRV_PCM_INFO_BLOCK_TRANSFER |
 				SNDRV_PCM_INFO_MMAP_VALID |
 				SNDRV_PCM_INFO_INTERLEAVED),
-	.formats =              SNDRV_PCM_FMTBIT_S16_LE,
+	.formats =              SNDRV_PCM_FMTBIT_S16_LE
+				| SNDRV_PCM_FMTBIT_S24_LE,
 	.rates =                (SNDRV_PCM_RATE_8000 |
 				SNDRV_PCM_RATE_16000 |
 				SNDRV_PCM_RATE_48000),
@@ -147,9 +146,6 @@ static void pcm_afe_process_tx_pkt(uint32_t opcode,
 						runtime->channels * 2)));
 				pr_debug("prtd->poll_time: %d",
 						prtd->poll_time);
-				hrtimer_start(&prtd->hrt,
-					ns_to_ktime(0),
-					HRTIMER_MODE_REL);
 				break;
 			}
 			case AFE_EVENT_RTPORT_STOP:
@@ -213,9 +209,6 @@ static void pcm_afe_process_rx_pkt(uint32_t opcode,
 				snd_pcm_lib_period_bytes(prtd->substream)
 					* 1000 * 1000)/(runtime->rate
 					* runtime->channels * 2)));
-			hrtimer_start(&prtd->hrt,
-				ns_to_ktime(0),
-				HRTIMER_MODE_REL);
 			pr_debug("prtd->poll_time : %d", prtd->poll_time);
 			break;
 		}
@@ -298,7 +291,6 @@ static int msm_afe_capture_prepare(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-/* Conventional and unconventional sample rate supported */
 static unsigned int supported_sample_rates[] = {
 	8000, 16000, 48000
 };
@@ -352,7 +344,7 @@ static int msm_afe_open(struct snd_pcm_substream *substream)
 				&constraints_sample_rates);
 	if (ret < 0)
 		pr_err("snd_pcm_hw_constraint_list failed\n");
-	/* Ensure that buffer size is a multiple of period size */
+	
 	ret = snd_pcm_hw_constraint_integer(runtime,
 					    SNDRV_PCM_HW_PARAM_PERIODS);
 	if (ret < 0)
@@ -472,6 +464,8 @@ static int msm_afe_trigger(struct snd_pcm_substream *substream, int cmd)
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 		pr_debug("%s: SNDRV_PCM_TRIGGER_START\n", __func__);
 		prtd->start = 1;
+		hrtimer_start(&prtd->hrt, ns_to_ktime(0),
+					HRTIMER_MODE_REL);
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:

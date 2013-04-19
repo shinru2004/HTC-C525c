@@ -11,6 +11,7 @@
 #include <linux/types.h>
 #include <linux/slab.h>
 #include <linux/kernel.h>
+#include <linux/export.h>
 #include <linux/string.h>
 #include <linux/errno.h>
 #include <linux/skbuff.h>
@@ -48,7 +49,7 @@ static int mq_init(struct Qdisc *sch, struct nlattr *opt)
 	if (!netif_is_multiqueue(dev))
 		return -EOPNOTSUPP;
 
-	/* pre-allocate qdiscs, attachment can't fail */
+	
 	priv->qdiscs = kcalloc(dev->num_tx_queues, sizeof(priv->qdiscs[0]),
 			       GFP_KERNEL);
 	if (priv->qdiscs == NULL)

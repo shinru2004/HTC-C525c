@@ -14,7 +14,6 @@
  *
  */
 
-/* Control bluetooth power for glacier platform */
 
 #include <asm/mach-types.h>
 
@@ -30,17 +29,16 @@ static DEFINE_MUTEX(htc_w_b_mutex);
 static struct regulator *reg_l13 = NULL;
 static struct regulator *reg_l25 = NULL;
 
-/* pmic config */
 static struct pm_gpio pmic_gpio_sleep_clk_output = {
-	.direction			= PM_GPIO_DIR_OUT,
-	.output_buffer	= PM_GPIO_OUT_BUF_CMOS,
-	.output_value		= 0,
-	.pull						= PM_GPIO_PULL_NO,
-	.vin_sel				= PM8038_GPIO_VIN_L11,
-	.out_strength		= PM_GPIO_STRENGTH_HIGH,
-	.function				= PM_GPIO_FUNC_1,
-	.inv_int_pol		= 0,
-	.disable_pin		= 0,
+	.direction      = PM_GPIO_DIR_OUT,
+	.output_buffer  = PM_GPIO_OUT_BUF_CMOS,
+	.output_value   = 0,
+	.pull           = PM_GPIO_PULL_NO,
+	.vin_sel        = PM8038_GPIO_VIN_L11,
+	.out_strength   = PM_GPIO_STRENGTH_HIGH,
+	.function       = PM_GPIO_FUNC_1,
+	.inv_int_pol    = 0,
+	.disable_pin    = 0,
 };
 
 int pmic_regulator_enable(struct regulator **preg, char *name, unsigned int volt)
@@ -50,7 +48,7 @@ int pmic_regulator_enable(struct regulator **preg, char *name, unsigned int volt
 	if (preg == NULL)
 		return -EINVAL;
 
-	if (*preg == NULL) { /* If the reg had not been initialized */
+	if (*preg == NULL) { 
 		if (strlen(name) == 0)
 			return -EINVAL;
 

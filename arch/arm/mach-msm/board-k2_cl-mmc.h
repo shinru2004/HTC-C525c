@@ -1,4 +1,4 @@
-/* linux/arch/arm/mach-msm/board-k2_cl-mmc.h
+/* linux/arch/arm/mach-msm/board-k2_ul-mmc.h
  *
  * Copyright (C) 2011 HTC Corporation.
  *

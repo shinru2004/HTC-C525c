@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,29 +10,24 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-/*
- * Qualcomm PMIC 8821 driver header file
- *
- */
 
 #ifndef __MFD_PM8821_H
 #define __MFD_PM8821_H
 
 #include <linux/device.h>
-#include <linux/mfd/pm8xxx/irq.h>
+#include <linux/mfd/pm8xxx/pm8821-irq.h>
 #include <linux/mfd/pm8xxx/mpp.h>
 
-#define PM8821_NR_IRQS		(64)
+#define PM8821_NR_IRQS		(112)
 #define PM8821_NR_MPPS		(4)
 
-#define PM8821_MPP_BLOCK_START	(16)
-#define PM8821_IRQ_BLOCK_BIT(block, bit) ((block) * 8 + (bit))
+#define PM8821_MPP_BLOCK_START	(4)
 
-/* MPPs [1,N] */
+#define PM8821_IRQ_BLOCK_BIT(block, bit) ((block-1) * 8 + (bit))
+
 #define PM8821_MPP_IRQ(base, mpp)	((base) + \
 		PM8821_IRQ_BLOCK_BIT(PM8821_MPP_BLOCK_START, (mpp)-1))
 
-/* PMIC Interrupts */
 
 struct pm8821_platform_data {
 	int					irq_base;

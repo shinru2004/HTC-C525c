@@ -344,8 +344,13 @@ static int msm_ipc_router_ioctl(struct socket *sock,
 	struct sock *sk = sock->sk;
 	struct msm_ipc_port *port_ptr;
 	struct server_lookup_args server_arg;
+#ifdef CONFIG_MSM8960_ONLY
 	struct msm_ipc_port_addr *port_addr = NULL;
 	unsigned int n, port_addr_sz = 0;
+#else
+	struct msm_ipc_server_info *srv_info = NULL;
+	unsigned int n, srv_info_sz = 0;
+#endif 
 	int ret;
 
 	if (!sk)
@@ -385,6 +390,7 @@ static int msm_ipc_router_ioctl(struct socket *sock,
 			ret = -EINVAL;
 			break;
 		}
+#ifdef CONFIG_MSM8960_ONLY
 		if (server_arg.num_entries_in_array) {
 			port_addr_sz = server_arg.num_entries_in_array *
 					sizeof(*port_addr);
@@ -414,6 +420,39 @@ static int msm_ipc_router_ioctl(struct socket *sock,
 				ret = -EFAULT;
 			kfree(port_addr);
 		}
+
+#else 
+
+		if (server_arg.num_entries_in_array) {
+			srv_info_sz = server_arg.num_entries_in_array *
+					sizeof(*srv_info);
+			srv_info = kmalloc(srv_info_sz, GFP_KERNEL);
+			if (!srv_info) {
+				ret = -ENOMEM;
+				break;
+			}
+		}
+		ret = msm_ipc_router_lookup_server_name(&server_arg.port_name,
+				srv_info, server_arg.num_entries_in_array,
+				server_arg.lookup_mask);
+		if (ret < 0) {
+			pr_err("%s: Server not found\n", __func__);
+			ret = -ENODEV;
+			kfree(srv_info);
+			break;
+		}
+		server_arg.num_entries_found = ret;
+
+		ret = copy_to_user((void *)arg, &server_arg,
+				   sizeof(server_arg));
+		if (srv_info_sz) {
+			ret = copy_to_user((void *)(arg + sizeof(server_arg)),
+					   srv_info, srv_info_sz);
+			if (ret)
+				ret = -EFAULT;
+			kfree(srv_info);
+		}
+#endif 
 		break;
 
 	case IPC_ROUTER_IOCTL_BIND_CONTROL_PORT:

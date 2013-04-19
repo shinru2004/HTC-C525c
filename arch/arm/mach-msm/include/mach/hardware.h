@@ -17,8 +17,6 @@
 #ifndef __ASM_ARCH_MSM_HARDWARE_H
 #define __ASM_ARCH_MSM_HARDWARE_H
 
-#define PCIBIOS_MIN_IO                  0x10000000
-#define PCIBIOS_MIN_MEM                 0x10000000
 #define pcibios_assign_all_busses()     1
 
 #endif

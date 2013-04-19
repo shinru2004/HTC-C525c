@@ -31,7 +31,8 @@
 #define WCD9XXX_SLIM_RW_MAX_TRIES 3
 
 #define MAX_WCD9XXX_DEVICE	4
-#define WCD9XXX_I2C_MODE	0x03
+#define TABLA_I2C_MODE	0x03
+#define SITAR_I2C_MODE	0x01
 
 struct wcd9xxx_i2c {
 	struct i2c_client *client;
@@ -197,9 +198,6 @@ static int wcd9xxx_slim_read_device(struct wcd9xxx *wcd9xxx, unsigned short reg,
 
 	return ret;
 }
-/* Interface specifies whether the write is to the interface or general
- * registers.
- */
 static int wcd9xxx_slim_write_device(struct wcd9xxx *wcd9xxx,
 		unsigned short reg, int bytes, void *src, bool interface)
 {
@@ -266,7 +264,9 @@ static int wcd9xxx_reset(struct wcd9xxx *wcd9xxx)
 {
 	int ret;
 
-	if (wcd9xxx->reset_gpio) {
+	
+	if (wcd9xxx->reset_gpio &&
+		wcd9xxx_intf == -1) {
 		ret = gpio_request(wcd9xxx->reset_gpio, "CDC_RESET");
 		if (ret) {
 			pr_err("%s: Failed to request gpio %d\n", __func__,
@@ -281,6 +281,8 @@ static int wcd9xxx_reset(struct wcd9xxx *wcd9xxx)
 		msleep(20);
 		gpio_direction_output(wcd9xxx->reset_gpio, 1);
 		msleep(20);
+	} else {
+		wcd9xxx->reset_gpio = 0;
 	}
 	return 0;
 }
@@ -307,7 +309,8 @@ static int wcd9xxx_device_init(struct wcd9xxx *wcd9xxx, int irq)
 	wcd9xxx->wlock_holders = 0;
 	wcd9xxx->pm_state = WCD9XXX_PM_SLEEPABLE;
 	init_waitqueue_head(&wcd9xxx->pm_wq);
-	wake_lock_init(&wcd9xxx->wlock, WAKE_LOCK_IDLE, "wcd9310-irq");
+	pm_qos_add_request(&wcd9xxx->pm_qos_req, PM_QOS_CPU_DMA_LATENCY,
+				PM_QOS_DEFAULT_VALUE);
 
 	dev_set_drvdata(wcd9xxx->dev, wcd9xxx);
 
@@ -345,20 +348,16 @@ static int wcd9xxx_device_init(struct wcd9xxx *wcd9xxx, int irq)
 			wcd9xxx_dev_size = ARRAY_SIZE(sitar_devs);
 		}
 	} else {
-		/* Need to add here check for Tabla.
-		 * For now the read of version takes
-		 * care of now only tabla.
-		 */
 		pr_debug("%s : Read codec version using I2C\n",	__func__);
-		if (TABLA_IS_1_X(wcd9xxx->version)) {
+		if (!strncmp(wcd9xxx_modules[0].client->name, "sitar", 5)) {
+			wcd9xxx_dev = sitar_devs;
+			wcd9xxx_dev_size = ARRAY_SIZE(sitar_devs);
+		} else if (TABLA_IS_1_X(wcd9xxx->version)) {
 			wcd9xxx_dev = tabla1x_devs;
 			wcd9xxx_dev_size = ARRAY_SIZE(tabla1x_devs);
 		} else if (TABLA_IS_2_0(wcd9xxx->version)) {
 			wcd9xxx_dev = tabla_devs;
 			wcd9xxx_dev_size = ARRAY_SIZE(tabla_devs);
-		} else {
-			wcd9xxx_dev = sitar_devs;
-			wcd9xxx_dev_size = ARRAY_SIZE(sitar_devs);
 		}
 	}
 
@@ -374,7 +373,7 @@ err_irq:
 	wcd9xxx_irq_exit(wcd9xxx);
 err:
 	wcd9xxx_bring_down(wcd9xxx);
-	wake_lock_destroy(&wcd9xxx->wlock);
+	pm_qos_remove_request(&wcd9xxx->pm_qos_req);
 	mutex_destroy(&wcd9xxx->pm_lock);
 	mutex_destroy(&wcd9xxx->io_lock);
 	mutex_destroy(&wcd9xxx->xfer_lock);
@@ -387,7 +386,7 @@ static void wcd9xxx_device_exit(struct wcd9xxx *wcd9xxx)
 	wcd9xxx_bring_down(wcd9xxx);
 	wcd9xxx_free_reset(wcd9xxx);
 	mutex_destroy(&wcd9xxx->pm_lock);
-	wake_lock_destroy(&wcd9xxx->wlock);
+	pm_qos_remove_request(&wcd9xxx->pm_qos_req);
 	mutex_destroy(&wcd9xxx->io_lock);
 	mutex_destroy(&wcd9xxx->xfer_lock);
 	if (wcd9xxx_intf == WCD9XXX_INTERFACE_TYPE_SLIMBUS)
@@ -464,7 +463,7 @@ static ssize_t codec_debug_write(struct file *filp,
 	lbuf[cnt] = '\0';
 
 	if (!strncmp(access_str, "poke", 6)) {
-		/* write */
+		
 		rc = get_parameters(lbuf, param, 2);
 		if ((param[0] <= 0x3FF) && (param[1] <= 0xFF) &&
 			(rc == 0))
@@ -473,7 +472,7 @@ static ssize_t codec_debug_write(struct file *filp,
 		else
 			rc = -EINVAL;
 	} else if (!strncmp(access_str, "peek", 6)) {
-		/* read */
+		
 		rc = get_parameters(lbuf, param, 1);
 		if ((param[0] <= 0x3FF) && (rc == 0))
 			read_data = wcd9xxx_interface_reg_read(debugCodec,
@@ -635,7 +634,7 @@ int wcd9xxx_i2c_write_device(u16 reg, u8 *value,
 	data[1] = *value;
 	msg->buf = data;
 	ret = i2c_transfer(wcd9xxx->client->adapter, wcd9xxx->xfer_msg, 1);
-	/* Try again if the write fails */
+	
 	if (ret != 1) {
 		ret = i2c_transfer(wcd9xxx->client->adapter,
 						wcd9xxx->xfer_msg, 1);
@@ -679,7 +678,7 @@ int wcd9xxx_i2c_read_device(unsigned short reg,
 		ret = i2c_transfer(wcd9xxx->client->adapter,
 				wcd9xxx->xfer_msg, 2);
 
-		/* Try again if read fails first time */
+		
 		if (ret != 2) {
 			ret = i2c_transfer(wcd9xxx->client->adapter,
 							wcd9xxx->xfer_msg, 2);
@@ -711,8 +710,10 @@ static int __devinit wcd9xxx_i2c_probe(struct i2c_client *client,
 	struct wcd9xxx_pdata *pdata = client->dev.platform_data;
 	int val = 0;
 	int ret = 0;
+	int i2c_mode = 0;
 	static int device_id;
 
+	pr_info("%s\n", __func__);
 	if (wcd9xxx_intf == WCD9XXX_INTERFACE_TYPE_SLIMBUS) {
 		pr_info("tabla card is already detected in slimbus mode\n");
 		return -ENODEV;
@@ -762,12 +763,15 @@ static int __devinit wcd9xxx_i2c_probe(struct i2c_client *client,
 	wcd9xxx->irq = pdata->irq;
 	wcd9xxx->irq_base = pdata->irq_base;
 
-	/*read the tabla status before initializing the device type*/
+	
 	ret = wcd9xxx_read(wcd9xxx, WCD9XXX_A_CHIP_STATUS, 1, &val, 0);
-	if ((ret < 0) || (val != WCD9XXX_I2C_MODE)) {
-		pr_err("failed to read the wcd9xxx status\n");
-		goto err_device_init;
-	}
+	if (!strncmp(wcd9xxx_modules[0].client->name, "sitar", 5))
+		i2c_mode = SITAR_I2C_MODE;
+	else if (!strncmp(wcd9xxx_modules[0].client->name, "tabla", 5))
+		i2c_mode = TABLA_I2C_MODE;
+
+	if ((ret < 0) || (val != i2c_mode))
+		pr_err("failed to read the wcd9xxx status ret = %d\n", ret);
 
 	ret = wcd9xxx_device_init(wcd9xxx, wcd9xxx->irq);
 	if (ret) {
@@ -876,9 +880,6 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 			&wcd9xxx->slim_slave->laddr);
 		if (ret) {
 			if (sgla_retry_cnt++ < WCD9XXX_SLIM_GLA_MAX_RETRIES) {
-				/* Give SLIMBUS slave time to report present
-				   and be ready.
-				 */
 				usleep_range(1000, 1000);
 				pr_debug("%s: retry slim_get_logical_addr()\n",
 					__func__);
@@ -986,16 +987,12 @@ static int wcd9xxx_suspend(struct wcd9xxx *wcd9xxx, pm_message_t pmesg)
 	int ret = 0;
 
 	pr_debug("%s: enter\n", __func__);
-	/* wake_lock() can be called after this suspend chain call started.
-	 * thus suspend can be called while wlock is being held */
 	mutex_lock(&wcd9xxx->pm_lock);
 	if (wcd9xxx->pm_state == WCD9XXX_PM_SLEEPABLE) {
 		pr_debug("%s: suspending system, state %d, wlock %d\n",
 			 __func__, wcd9xxx->pm_state, wcd9xxx->wlock_holders);
 		wcd9xxx->pm_state = WCD9XXX_PM_ASLEEP;
 	} else if (wcd9xxx->pm_state == WCD9XXX_PM_AWAKE) {
-		/* unlock to wait for pm_state == WCD9XXX_PM_SLEEPABLE
-		 * then set to WCD9XXX_PM_ASLEEP */
 		pr_debug("%s: waiting to suspend system, state %d, wlock %d\n",
 			 __func__, wcd9xxx->pm_state, wcd9xxx->wlock_holders);
 		mutex_unlock(&wcd9xxx->pm_lock);
@@ -1104,16 +1101,25 @@ static struct slim_driver tabla2x_slim_driver = {
 	.suspend = wcd9xxx_slim_suspend,
 };
 
-#define TABLA_I2C_TOP_LEVEL 0
-#define TABLA_I2C_ANALOG       1
-#define TABLA_I2C_DIGITAL_1    2
-#define TABLA_I2C_DIGITAL_2    3
+#define WCD9XXX_I2C_TOP_LEVEL	0
+#define WCD9XXX_I2C_ANALOG	1
+#define WCD9XXX_I2C_DIGITAL_1	2
+#define WCD9XXX_I2C_DIGITAL_2	3
 
 static struct i2c_device_id tabla_id_table[] = {
-	{"tabla top level", TABLA_I2C_TOP_LEVEL},
-	{"tabla analog", TABLA_I2C_TOP_LEVEL},
-	{"tabla digital1", TABLA_I2C_TOP_LEVEL},
-	{"tabla digital2", TABLA_I2C_TOP_LEVEL},
+	{"tabla top level", WCD9XXX_I2C_TOP_LEVEL},
+	{"tabla analog", WCD9XXX_I2C_ANALOG},
+	{"tabla digital1", WCD9XXX_I2C_DIGITAL_1},
+	{"tabla digital2", WCD9XXX_I2C_DIGITAL_2},
+	{}
+};
+MODULE_DEVICE_TABLE(i2c, tabla_id_table);
+
+static struct i2c_device_id sitar_id_table[] = {
+	{"sitar top level", WCD9XXX_I2C_TOP_LEVEL},
+	{"sitar analog", WCD9XXX_I2C_ANALOG},
+	{"sitar digital1", WCD9XXX_I2C_DIGITAL_1},
+	{"sitar digital2", WCD9XXX_I2C_DIGITAL_2},
 	{}
 };
 MODULE_DEVICE_TABLE(i2c, tabla_id_table);
@@ -1130,9 +1136,21 @@ static struct i2c_driver tabla_i2c_driver = {
 	.suspend = wcd9xxx_i2c_suspend,
 };
 
+static struct i2c_driver sitar_i2c_driver = {
+	.driver                 = {
+		.owner          =       THIS_MODULE,
+		.name           =       "sitar-i2c-core",
+	},
+	.id_table               =       sitar_id_table,
+	.probe                  =       wcd9xxx_i2c_probe,
+	.remove                 =       __devexit_p(wcd9xxx_i2c_remove),
+	.resume	= wcd9xxx_i2c_resume,
+	.suspend = wcd9xxx_i2c_suspend,
+};
+
 static int __init wcd9xxx_init(void)
 {
-	int ret1, ret2, ret3, ret4, ret5;
+	int ret1, ret2, ret3, ret4, ret5, ret6;
 
 	ret1 = slim_driver_register(&tabla_slim_driver);
 	if (ret1 != 0)
@@ -1154,7 +1172,11 @@ static int __init wcd9xxx_init(void)
 	if (ret5 != 0)
 		pr_err("Failed to register sitar SB driver: %d\n", ret5);
 
-	return (ret1 && ret2 && ret3 && ret4 && ret5) ? -1 : 0;
+	ret6 = i2c_add_driver(&sitar_i2c_driver);
+	if (ret6 != 0)
+		pr_err("failed to add the I2C driver\n");
+
+	return (ret1 && ret2 && ret3 && ret4 && ret5 && ret6) ? -1 : 0;
 }
 module_init(wcd9xxx_init);
 

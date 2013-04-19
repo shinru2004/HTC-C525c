@@ -47,14 +47,6 @@ static void end_swap_bio_write(struct bio *bio, int err)
 
 	if (!uptodate) {
 		SetPageError(page);
-		/*
-		 * We failed to write the page out to swap-space.
-		 * Re-dirty the page in order to avoid it being reclaimed.
-		 * Also print a dire warning that things will go BAD (tm)
-		 * very quickly.
-		 *
-		 * Also clear PG_reclaim to avoid rotate_reclaimable_page()
-		 */
 		set_page_dirty(page);
 		printk(KERN_ALERT "Write-error on swap-device (%u:%u:%Lu)\n",
 				imajor(bio->bi_bdev->bd_inode),
@@ -85,10 +77,6 @@ void end_swap_bio_read(struct bio *bio, int err)
 	bio_put(bio);
 }
 
-/*
- * We may have stale swap cache pages in memory: notice
- * them here and get rid of the unnecessary final write.
- */
 int swap_writepage(struct page *page, struct writeback_control *wbc)
 {
 	struct bio *bio;

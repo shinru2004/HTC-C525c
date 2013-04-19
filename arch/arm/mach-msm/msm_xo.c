@@ -56,19 +56,11 @@ static const char *msm_xo_to_str[NUM_MSM_XO_IDS] = {
 	[MSM_XO_CORE] = "CORE",
 };
 
-static const char *msm_xo_mode_to_str(unsigned mode)
-{
-	switch (mode) {
-	case MSM_XO_MODE_ON:
-		return "ON";
-	case MSM_XO_MODE_PIN_CTRL:
-		return "PIN";
-	case MSM_XO_MODE_OFF:
-		return "OFF";
-	default:
-		return "ERR";
-	}
-}
+static const char *msm_xo_mode_to_str[NUM_MSM_XO_MODES] = {
+	[MSM_XO_MODE_ON] = "ON",
+	[MSM_XO_MODE_PIN_CTRL] = "PIN",
+	[MSM_XO_MODE_OFF] = "OFF",
+};
 
 static int msm_xo_debugfs_open(struct inode *inode, struct file *filp)
 {
@@ -83,7 +75,7 @@ static ssize_t msm_xo_debugfs_read(struct file *filp, char __user *ubuf,
 	char buf[10];
 	struct msm_xo_voter *xo = filp->private_data;
 
-	r = snprintf(buf, sizeof(buf), "%s\n", msm_xo_mode_to_str(xo->mode));
+	r = snprintf(buf, sizeof(buf), "%s\n", msm_xo_mode_to_str[xo->mode]);
 	return simple_read_from_buffer(ubuf, cnt, ppos, buf, r);
 }
 
@@ -102,8 +94,8 @@ static ssize_t msm_xo_debugfs_write(struct file *filp,
 	buf[cnt] = '\0';
 	b = strstrip(buf);
 
-	for (i = 0; i < NUM_MSM_XO_MODES; i++)
-		if (!strncasecmp(b, msm_xo_mode_to_str(i), sizeof(buf))) {
+	for (i = 0; i < ARRAY_SIZE(msm_xo_mode_to_str); i++)
+		if (!strncasecmp(b, msm_xo_mode_to_str[i], sizeof(buf))) {
 			ret = msm_xo_mode_vote(xo, i);
 			return ret ? : cnt;
 		}
@@ -149,12 +141,12 @@ static void msm_xo_dump_xo(struct seq_file *m, struct msm_xo *xo,
 {
 	struct msm_xo_voter *voter;
 
-	seq_printf(m, "CXO %-16s%s\n", name, msm_xo_mode_to_str(xo->mode));
+	seq_printf(m, "CXO %-16s%s\n", name, msm_xo_mode_to_str[xo->mode]);
 	list_for_each_entry(voter, &xo->voters, list)
 		seq_printf(m, " %s %-16s %s\n",
 				xo->mode == voter->mode ? "*" : " ",
 				voter->name,
-				msm_xo_mode_to_str(voter->mode));
+				msm_xo_mode_to_str[voter->mode]);
 }
 
 static int msm_xo_show_voters(struct seq_file *m, void *v)
@@ -198,14 +190,14 @@ static void msm_xo_print_xo(struct msm_xo *xo,
 {
 	struct msm_xo_voter *voter;
 
-	if (xo->mode == MSM_XO_MODE_OFF)
+	if(xo->mode == MSM_XO_MODE_OFF)
 		return;
-	printk("%-20s%s\n", name, msm_xo_mode_to_str(xo->mode));
+	pr_info("%-20s%s\n", name, msm_xo_mode_to_str[xo->mode]);
 	list_for_each_entry(voter, &xo->voters, list)
-		printk(" %s %-16s %s\n",
+		pr_info(" %s %-16s %s\n",
 				xo->mode == voter->mode ? "*" : " ",
 				voter->name,
-				msm_xo_mode_to_str(voter->mode));
+				msm_xo_mode_to_str[voter->mode]);
 }
 
 int msm_xo_print_voters(void)
@@ -252,10 +244,6 @@ static int msm_xo_update_vote(struct msm_xo *xo)
 	if (vote == prev_vote)
 		return 0;
 
-	/*
-	 * Change the vote here to simplify the TCXO logic. If the RPM
-	 * command fails we'll rollback.
-	 */
 	xo->mode = vote;
 	cmd.id = MSM_RPM_ID_CXO_BUFFERS;
 	cmd.value = (msm_xo_sources[MSM_XO_TCXO_D0].mode << 0)  |
@@ -263,12 +251,6 @@ static int msm_xo_update_vote(struct msm_xo *xo)
 		    (msm_xo_sources[MSM_XO_TCXO_A0].mode << 16) |
 		    (msm_xo_sources[MSM_XO_TCXO_A1].mode << 24) |
 		    (msm_xo_sources[MSM_XO_TCXO_A2].mode << 28) |
-		    /*
-		     * 8660 RPM has XO_CORE at bit 18 and 8960 RPM has
-		     * XO_CORE at bit 20. Since the opposite bit is
-		     * reserved in both cases, just set both and be
-		     * done with it.
-		     */
 		    ((msm_xo_sources[MSM_XO_CORE].mode ? 1 : 0) << 20) |
 		    ((msm_xo_sources[MSM_XO_CORE].mode ? 1 : 0) << 18);
 	ret = msm_rpm_set(MSM_RPM_CTX_SET_0, &cmd, 1);
@@ -286,7 +268,8 @@ static int __msm_xo_mode_vote(struct msm_xo_voter *xo_voter, unsigned mode)
 	int is_d0 = xo == &msm_xo_sources[MSM_XO_TCXO_D0];
 	int needs_workaround = cpu_is_msm8960() || cpu_is_apq8064() ||
 			       cpu_is_msm8930() || cpu_is_msm8930aa() ||
-			       cpu_is_msm9615() || cpu_is_msm8627();
+			       cpu_is_msm9615() || cpu_is_msm8627() ||
+			       cpu_is_apq8064ab();
 
 	if (xo_voter->mode == mode)
 		return 0;
@@ -299,7 +282,7 @@ static int __msm_xo_mode_vote(struct msm_xo_voter *xo_voter, unsigned mode)
 		xo->votes[mode]--;
 		goto out;
 	}
-	/* TODO: Remove once RPM separates the concept of D0 and CXO */
+	
 	if (is_d0 && needs_workaround) {
 		static struct clk *xo_clk;
 
@@ -307,7 +290,7 @@ static int __msm_xo_mode_vote(struct msm_xo_voter *xo_voter, unsigned mode)
 			xo_clk = clk_get_sys("msm_xo", "xo");
 			BUG_ON(IS_ERR(xo_clk));
 		}
-		/* Ignore transitions from pin to on or vice versa */
+		
 		if (mode && xo_voter->mode == MSM_XO_MODE_OFF)
 			clk_enable(xo_clk);
 		else if (!mode)
@@ -318,17 +301,6 @@ out:
 	return ret;
 }
 
-/**
- * msm_xo_mode_vote() - Vote for an XO to be ON, OFF, or under PIN_CTRL
- * @xo_voter - Valid handle returned from msm_xo_get()
- * @mode - Mode to vote for (ON, OFF, PIN_CTRL)
- *
- * Vote for an XO to be either ON, OFF, or under PIN_CTRL. Votes are
- * aggregated with ON taking precedence over PIN_CTRL taking precedence
- * over OFF.
- *
- * This function returns 0 on success or a negative error code on failure.
- */
 int msm_xo_mode_vote(struct msm_xo_voter *xo_voter, enum msm_xo_modes mode)
 {
 	int ret;
@@ -347,16 +319,6 @@ int msm_xo_mode_vote(struct msm_xo_voter *xo_voter, enum msm_xo_modes mode)
 }
 EXPORT_SYMBOL(msm_xo_mode_vote);
 
-/**
- * msm_xo_get() - Get a voting handle for an XO
- * @xo_id - XO identifier
- * @voter - Debug string to identify users
- *
- * XO voters vote for OFF by default. This function returns a pointer
- * indicating success. An ERR_PTR is returned on failure.
- *
- * If XO voting is disabled, %NULL is returned.
- */
 struct msm_xo_voter *msm_xo_get(enum msm_xo_ids xo_id, const char *voter)
 {
 	int ret;
@@ -381,7 +343,7 @@ struct msm_xo_voter *msm_xo_get(enum msm_xo_ids xo_id, const char *voter)
 
 	xo_voter->xo = &msm_xo_sources[xo_id];
 
-	/* Voters vote for OFF by default */
+	
 	mutex_lock(&msm_xo_lock);
 	xo_voter->xo->votes[MSM_XO_MODE_OFF]++;
 	list_add(&xo_voter->list, &xo_voter->xo->voters);
@@ -396,14 +358,6 @@ err:
 }
 EXPORT_SYMBOL(msm_xo_get);
 
-/**
- * msm_xo_put() - Release a voting handle
- * @xo_voter - Valid handle returned from msm_xo_get()
- *
- * Release a reference to an XO voting handle. This also removes the voter's
- * vote, therefore calling msm_xo_mode_vote(xo_voter, MSM_XO_MODE_OFF)
- * beforehand is unnecessary.
- */
 void msm_xo_put(struct msm_xo_voter *xo_voter)
 {
 	if (!xo_voter || IS_ERR(xo_voter))

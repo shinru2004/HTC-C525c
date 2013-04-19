@@ -41,8 +41,6 @@ struct mgmt_rp_read_index_list {
 	__le16 index[0];
 } __packed;
 
-/* Reserve one extra byte for names in management messages so that they
- * are always guaranteed to be nul-terminated */
 #define MGMT_MAX_NAME_LENGTH		(HCI_MAX_NAME_LENGTH + 1)
 
 #define MGMT_OP_READ_INFO		0x0004
@@ -161,6 +159,7 @@ struct mgmt_cp_set_io_capability {
 struct mgmt_cp_pair_device {
 	bdaddr_t bdaddr;
 	__u8 io_cap;
+	__u8 ssp_cap;
 } __packed;
 struct mgmt_rp_pair_device {
 	bdaddr_t bdaddr;
@@ -231,19 +230,6 @@ struct mgmt_cp_set_connection_params {
 struct mgmt_cp_encrypt_link {
 	bdaddr_t bdaddr;
 	__u8 enable;
-} __packed;
-
-#define MGMT_OP_SET_RSSI_REPORTER		0x0022
-struct mgmt_cp_set_rssi_reporter {
-	bdaddr_t	bdaddr;
-	__s8		rssi_threshold;
-	__le16	interval;
-	__u8		updateOnThreshExceed;
-} __packed;
-
-#define MGMT_OP_UNSET_RSSI_REPORTER		0x0023
-struct mgmt_cp_unset_rssi_reporter {
-	bdaddr_t	bdaddr;
 } __packed;
 
 #define MGMT_EV_CMD_COMPLETE		0x0001
@@ -372,10 +358,4 @@ struct mgmt_ev_remote_version {
 struct mgmt_ev_remote_features {
 	bdaddr_t bdaddr;
 	uint8_t features[8];
-} __packed;
-
-#define MGMT_EV_RSSI_UPDATE		0x0020
-struct mgmt_ev_rssi_update {
-	bdaddr_t	bdaddr;
-	__s8			rssi;
 } __packed;

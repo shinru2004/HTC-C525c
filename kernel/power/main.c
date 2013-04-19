@@ -3,31 +3,32 @@
  *
  * Copyright (c) 2003 Patrick Mochel
  * Copyright (c) 2003 Open Source Development Lab
- * 
+ *
  * This file is released under the GPLv2
  *
  */
 
+#include <linux/export.h>
 #include <linux/kobject.h>
 #include <linux/string.h>
 #include <linux/resume-trace.h>
 #include <linux/workqueue.h>
+#include <linux/debugfs.h>
+#include <linux/seq_file.h>
 #include <linux/hrtimer.h>
 
 #include "power.h"
 
-#define MAX_BUF 100
-
 #ifdef CONFIG_PERFLOCK
 #include <mach/perflock.h>
-#include <linux/slab.h>
 #endif
+
+#define MAX_BUF 100
 
 DEFINE_MUTEX(pm_mutex);
 
 #ifdef CONFIG_PM_SLEEP
 
-/* Routines for PM-transition notifications */
 
 static BLOCKING_NOTIFIER_HEAD(pm_chain_head);
 
@@ -52,11 +53,11 @@ EXPORT_SYMBOL_GPL(unregister_pm_notifier);
 
 int pm_notifier_call_chain(unsigned long val)
 {
-	return (blocking_notifier_call_chain(&pm_chain_head, val, NULL)
-			== NOTIFY_BAD) ? -EINVAL : 0;
+	int ret = blocking_notifier_call_chain(&pm_chain_head, val, NULL);
+
+	return notifier_to_errno(ret);
 }
 
-/* If set, devices may be suspended and resumed asynchronously. */
 int pm_async_enabled = 1;
 
 static ssize_t pm_async_show(struct kobject *kobj, struct kobj_attribute *attr,
@@ -103,12 +104,9 @@ touch_event_store(struct kobject *kobj,
 	hrtimer_cancel(&tc_ev_timer);
 	tc_ev_processed = 0;
 
-	/* set a timer to notify the userspace to stop processing
-	 * touch event
-	 */
 	hrtimer_start(&tc_ev_timer, touch_evt_timer_val, HRTIMER_MODE_REL);
 
-	/* wakeup the userspace poll */
+	
 	sysfs_notify(kobj, NULL, "touch_event");
 
 	return n;
@@ -142,7 +140,7 @@ power_attr(touch_event_timer);
 
 static void touch_event_fn(struct work_struct *work)
 {
-	/* wakeup the userspace poll */
+	
 	tc_ev_processed = 1;
 	sysfs_notify(power_kobj, NULL, "touch_event");
 
@@ -184,7 +182,7 @@ static ssize_t pm_test_show(struct kobject *kobj, struct kobj_attribute *attr,
 		}
 
 	if (s != buf)
-		/* convert the last space to a newline */
+		
 		*(s-1) = '\n';
 
 	return (s - buf);
@@ -202,7 +200,7 @@ static ssize_t pm_test_store(struct kobject *kobj, struct kobj_attribute *attr,
 	p = memchr(buf, '\n', n);
 	len = p ? p - buf : n;
 
-	mutex_lock(&pm_mutex);
+	lock_system_sleep();
 
 	level = TEST_FIRST;
 	for (s = &pm_tests[level]; level <= TEST_MAX; s++, level++)
@@ -212,28 +210,117 @@ static ssize_t pm_test_store(struct kobject *kobj, struct kobj_attribute *attr,
 			break;
 		}
 
-	mutex_unlock(&pm_mutex);
+	unlock_system_sleep();
 
 	return error ? error : n;
 }
 
 power_attr(pm_test);
-#endif /* CONFIG_PM_DEBUG */
+#endif 
 
-#endif /* CONFIG_PM_SLEEP */
+#ifdef CONFIG_DEBUG_FS
+static char *suspend_step_name(enum suspend_stat_step step)
+{
+	switch (step) {
+	case SUSPEND_FREEZE:
+		return "freeze";
+	case SUSPEND_PREPARE:
+		return "prepare";
+	case SUSPEND_SUSPEND:
+		return "suspend";
+	case SUSPEND_SUSPEND_NOIRQ:
+		return "suspend_noirq";
+	case SUSPEND_RESUME_NOIRQ:
+		return "resume_noirq";
+	case SUSPEND_RESUME:
+		return "resume";
+	default:
+		return "";
+	}
+}
+
+static int suspend_stats_show(struct seq_file *s, void *unused)
+{
+	int i, index, last_dev, last_errno, last_step;
+
+	last_dev = suspend_stats.last_failed_dev + REC_FAILED_NUM - 1;
+	last_dev %= REC_FAILED_NUM;
+	last_errno = suspend_stats.last_failed_errno + REC_FAILED_NUM - 1;
+	last_errno %= REC_FAILED_NUM;
+	last_step = suspend_stats.last_failed_step + REC_FAILED_NUM - 1;
+	last_step %= REC_FAILED_NUM;
+	seq_printf(s, "%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n"
+			"%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n",
+			"success", suspend_stats.success,
+			"fail", suspend_stats.fail,
+			"failed_freeze", suspend_stats.failed_freeze,
+			"failed_prepare", suspend_stats.failed_prepare,
+			"failed_suspend", suspend_stats.failed_suspend,
+			"failed_suspend_late",
+				suspend_stats.failed_suspend_late,
+			"failed_suspend_noirq",
+				suspend_stats.failed_suspend_noirq,
+			"failed_resume", suspend_stats.failed_resume,
+			"failed_resume_early",
+				suspend_stats.failed_resume_early,
+			"failed_resume_noirq",
+				suspend_stats.failed_resume_noirq);
+	seq_printf(s,	"failures:\n  last_failed_dev:\t%-s\n",
+			suspend_stats.failed_devs[last_dev]);
+	for (i = 1; i < REC_FAILED_NUM; i++) {
+		index = last_dev + REC_FAILED_NUM - i;
+		index %= REC_FAILED_NUM;
+		seq_printf(s, "\t\t\t%-s\n",
+			suspend_stats.failed_devs[index]);
+	}
+	seq_printf(s,	"  last_failed_errno:\t%-d\n",
+			suspend_stats.errno[last_errno]);
+	for (i = 1; i < REC_FAILED_NUM; i++) {
+		index = last_errno + REC_FAILED_NUM - i;
+		index %= REC_FAILED_NUM;
+		seq_printf(s, "\t\t\t%-d\n",
+			suspend_stats.errno[index]);
+	}
+	seq_printf(s,	"  last_failed_step:\t%-s\n",
+			suspend_step_name(
+				suspend_stats.failed_steps[last_step]));
+	for (i = 1; i < REC_FAILED_NUM; i++) {
+		index = last_step + REC_FAILED_NUM - i;
+		index %= REC_FAILED_NUM;
+		seq_printf(s, "\t\t\t%-s\n",
+			suspend_step_name(
+				suspend_stats.failed_steps[index]));
+	}
+
+	return 0;
+}
+
+static int suspend_stats_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, suspend_stats_show, NULL);
+}
+
+static const struct file_operations suspend_stats_operations = {
+	.open           = suspend_stats_open,
+	.read           = seq_read,
+	.llseek         = seq_lseek,
+	.release        = single_release,
+};
+
+static int __init pm_debugfs_init(void)
+{
+	debugfs_create_file("suspend_stats", S_IFREG | S_IRUGO,
+			NULL, NULL, &suspend_stats_operations);
+	return 0;
+}
+
+late_initcall(pm_debugfs_init);
+#endif 
+
+#endif 
 
 struct kobject *power_kobj;
 
-/**
- *	state - control system power state.
- *
- *	show() returns what states are supported, which is hard-coded to
- *	'standby' (Power-On Suspend), 'mem' (Suspend-to-RAM), and
- *	'disk' (Suspend-to-Disk).
- *
- *	store() accepts one of those strings, translates it into the 
- *	proper enumerated value, and initiates a suspend transition.
- */
 static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 			  char *buf)
 {
@@ -250,7 +337,7 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 	s += sprintf(s, "%s\n", "disk");
 #else
 	if (s != buf)
-		/* convert the last space to a newline */
+		
 		*(s-1) = '\n';
 #endif
 	return (s - buf);
@@ -274,26 +361,26 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 	p = memchr(buf, '\n', n);
 	len = p ? p - buf : n;
 
-	/* First, check if we are requested to hibernate */
+	
 	if (len == 4 && !strncmp(buf, "disk", len)) {
 		error = hibernate();
-  goto Exit;
+		goto Exit;
 	}
 
 #ifdef CONFIG_SUSPEND
 	for (s = &pm_states[state]; state < PM_SUSPEND_MAX; s++, state++) {
-		if (*s && len == strlen(*s) && !strncmp(buf, *s, len))
-			break;
-	}
-	if (state < PM_SUSPEND_MAX && *s)
+		if (*s && len == strlen(*s) && !strncmp(buf, *s, len)) {
 #ifdef CONFIG_EARLYSUSPEND
-		if (state == PM_SUSPEND_ON || valid_state(state)) {
-			error = 0;
-			request_suspend_state(state);
-		}
+			if (state == PM_SUSPEND_ON || valid_state(state)) {
+				error = 0;
+				request_suspend_state(state);
+				break;
+			}
 #else
-		error = enter_state(state);
+			error = pm_suspend(state);
 #endif
+		}
+	}
 #endif
 
  Exit:
@@ -354,7 +441,7 @@ static ssize_t wakeup_count_store(struct kobject *kobj,
 }
 
 power_attr(wakeup_count);
-#endif /* CONFIG_PM_SLEEP */
+#endif 
 
 #ifdef CONFIG_PM_TRACE
 int pm_trace_enabled;
@@ -396,7 +483,7 @@ pm_trace_dev_match_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 power_attr(pm_trace_dev_match);
 
-#endif /* CONFIG_PM_TRACE */
+#endif 
 
 #ifdef CONFIG_USER_WAKELOCK
 power_attr(wake_lock);
@@ -404,22 +491,22 @@ power_attr(wake_unlock);
 #endif
 
 #ifdef CONFIG_PERFLOCK
-static struct perf_lock user_highest_perf_lock;
-static struct perf_lock user_high_ceiling_lock;
+static struct perf_lock user_cpu_perf_lock;
+static struct perf_lock user_cpu_ceiling_lock;
 static struct perf_lock user_perf_lock[PERF_LOCK_INVALID];
 static struct perf_lock user_ceiling_lock[PERF_LOCK_INVALID];
 static ssize_t
 perflock_show(struct kobject *kobj, struct kobj_attribute *attr,
 		char *buf)
 {
-	/* bit[0] = lowest, bit[1] = low, bit[2] = medium, bit[3] = high, bit[4] = highest, bit[5] = highest(old user perflock) */
+	
 	int i, perf_enable = 0;
 
 	for (i = 0; i < PERF_LOCK_INVALID; i++)
 		if (is_perf_lock_active(&user_perf_lock[i]) != 0)
 			perf_enable |= (1 << i);
 
-	if (is_perf_lock_active(&user_highest_perf_lock) != 0)
+	if (is_perf_lock_active(&user_cpu_perf_lock) != 0)
 		perf_enable |= (1 << PERF_LOCK_INVALID);
 
 	return sprintf(buf, "%d\n", perf_enable);
@@ -449,11 +536,11 @@ perflock_store(struct kobject *kobj, struct kobj_attribute *attr,
 	int val , ret = -EINVAL;
 
 	if (sscanf(buf, "%d", &val) > 0) {
-		if (val == 11 && !is_perf_lock_active(&user_highest_perf_lock)) {
-			perf_lock(&user_highest_perf_lock);
+		if (val == 11 && !is_perf_lock_active(&user_cpu_perf_lock)) {
+			perf_lock(&user_cpu_perf_lock);
 			ret = n;
-		} else if (val == 10 && is_perf_lock_active(&user_highest_perf_lock)) {
-			perf_unlock(&user_highest_perf_lock);
+		} else if (val == 10 && is_perf_lock_active(&user_cpu_perf_lock)) {
+			perf_unlock(&user_cpu_perf_lock);
 			ret = n;
 		} else {
 			switch (val) {
@@ -463,7 +550,7 @@ perflock_store(struct kobject *kobj, struct kobj_attribute *attr,
 			perf_level_wrapper(6, 7, PERF_LOCK_HIGH);
 			perf_level_wrapper(8, 9, PERF_LOCK_HIGHEST);
 			default:
-				/* no matching level found */
+				
 				break;
 			}
 			return n;
@@ -499,18 +586,44 @@ launch_event_store(struct kobject *kobj, struct kobj_attribute *attr,
 }
 power_attr(launch_event);
 
+int powersave_enabled = 0;
+static ssize_t
+powersave_show(struct kobject *kobj, struct kobj_attribute *attr,
+                char *buf)
+{
+        return sprintf(buf, "%d\n", powersave_enabled);
+}
+
+static ssize_t
+powersave_store(struct kobject *kobj, struct kobj_attribute *attr,
+                const char *buf, size_t n)
+{
+        unsigned long val;
+
+        if (strict_strtoul(buf, 10, &val))
+                return -EINVAL;
+
+        if (val > 1)
+                return -EINVAL;
+
+        powersave_enabled = val;
+        sysfs_notify(kobj, NULL, "powersave");
+        return n;
+}
+power_attr(powersave);
+
 static ssize_t
 cpufreq_ceiling_show(struct kobject *kobj, struct kobj_attribute *attr,
 		char *buf)
 {
-	/* bit[0] = lowest, bit[1] = low, bit[2] = medium, bit[3] = high, bit[4] = highest, bit[5] = high(old user cpufreq_ceiling lock) */
+	
 	int i, ceiling_enable = 0;
 
 	for (i = 0; i < PERF_LOCK_INVALID; i++)
 		if(is_perf_lock_active(&user_ceiling_lock[i]) != 0)
 			ceiling_enable |= (1 << i);
 
-	if (is_perf_lock_active(&user_high_ceiling_lock) != 0)
+	if (is_perf_lock_active(&user_cpu_ceiling_lock) != 0)
 		ceiling_enable |= (1 << PERF_LOCK_INVALID);
 
 	return sprintf(buf, "%d\n", ceiling_enable);
@@ -539,11 +652,11 @@ cpufreq_ceiling_store(struct kobject *kobj, struct kobj_attribute *attr,
 	int val, ret = -EINVAL;
 
 	if (sscanf(buf, "%d", &val) > 0) {
-		if (val == 11 && !is_perf_lock_active(&user_high_ceiling_lock)) {
-			perf_lock(&user_high_ceiling_lock);
+		if (val == 11 && !is_perf_lock_active(&user_cpu_ceiling_lock)) {
+			perf_lock(&user_cpu_ceiling_lock);
 			ret = n;
-		} else if (val == 10 && is_perf_lock_active(&user_high_ceiling_lock)) {
-			perf_unlock(&user_high_ceiling_lock);
+		} else if (val == 10 && is_perf_lock_active(&user_cpu_ceiling_lock)) {
+			perf_unlock(&user_cpu_ceiling_lock);
 			ret = n;
 		} else {
 			switch (val){
@@ -553,7 +666,7 @@ cpufreq_ceiling_store(struct kobject *kobj, struct kobj_attribute *attr,
 			ceiling_level_wrapper(6, 7, PERF_LOCK_HIGH);
 			ceiling_level_wrapper(8, 9, PERF_LOCK_HIGHEST);
 			default:
-				/* no matching level found */
+				
 				break;
 			}
 			ret = n;
@@ -564,10 +677,49 @@ cpufreq_ceiling_store(struct kobject *kobj, struct kobj_attribute *attr,
 }
 power_attr(cpufreq_ceiling);
 
+#ifdef CONFIG_HTC_ONMODE_CHARGING
+static ssize_t state_onchg_show(struct kobject *kobj, struct kobj_attribute *attr,
+			     char *buf)
+{
+	char *s = buf;
+	if (get_onchg_state())
+		s += sprintf(s, "chgoff ");
+	else
+		s += sprintf(s, "chgon ");
+
+	if (s != buf)
+		
+		*(s-1) = '\n';
+
+	return (s - buf);
+}
+
+static ssize_t
+state_onchg_store(struct kobject *kobj, struct kobj_attribute *attr,
+	       const char *buf, size_t n)
+{
+	char *p;
+	int len;
+
+	p = memchr(buf, '\n', n);
+	len = p ? p - buf : n;
+
+	if (len == 5 || len == 6 || len == 7) {
+		if (!strncmp(buf, "chgon", len))
+			request_onchg_state(1);
+		else if (!strncmp(buf, "chgoff", len))
+			request_onchg_state(0);
+	}
+
+	return 0;
+}
+
+power_attr(state_onchg);
+#endif
+
 static int cpunum_max;
 static int cpunum_min;
 
-/* Show the locked greatest cpu min number. Show 0 if no lock */
 static ssize_t
 cpunum_floor_show(struct kobject *kobj, struct kobj_attribute *attr,
 		char *buf)
@@ -586,7 +738,6 @@ cpunum_floor_show(struct kobject *kobj, struct kobj_attribute *attr,
 	return sprintf(buf, "%d\n", i);
 }
 
-/* Store by bit. bit 0 = single core, bit 1 = dual core. */
 static ssize_t
 cpunum_floor_store(struct kobject *kobj, struct kobj_attribute *attr,
 		const char *buf, size_t n)
@@ -669,11 +820,15 @@ static struct attribute *g[] = {
 	&wake_lock_attr.attr,
 	&wake_unlock_attr.attr,
 #endif
+#ifdef CONFIG_HTC_ONMODE_CHARGING
+	&state_onchg_attr.attr,
+#endif
 #endif
 #ifdef CONFIG_PERFLOCK
 	&perflock_attr.attr,
 	&cpufreq_ceiling_attr.attr,
 	&launch_event_attr.attr,
+	&powersave_attr.attr,
 	&cpunum_floor_attr.attr,
 	&cpunum_ceiling_attr.attr,
 #endif
@@ -686,11 +841,15 @@ static struct attribute_group attr_group = {
 
 #ifdef CONFIG_PM_RUNTIME
 struct workqueue_struct *pm_wq;
+struct workqueue_struct *pm_rt_wq;
 EXPORT_SYMBOL_GPL(pm_wq);
 
 static int __init pm_start_workqueue(void)
 {
 	pm_wq = alloc_workqueue("pm", WQ_FREEZABLE, 0);
+	
+	pm_rt_wq = alloc_workqueue("pm_rt", WQ_FREEZABLE | WQ_HIGHPRI , 0);
+	
 
 	return pm_wq ? 0 : -ENOMEM;
 }
@@ -716,10 +875,11 @@ static int __init pm_init(void)
 	tc_ev_timer.function = &tc_ev_stop;
 	tc_ev_processed = 1;
 
+
 	power_kobj = kobject_create_and_add("power", NULL);
 #ifdef CONFIG_PERFLOCK
-	perf_lock_init(&user_highest_perf_lock, TYPE_PERF_LOCK, PERF_LOCK_HIGHEST, "User Highest Perflock"); /* old user perf lock */
-	perf_lock_init(&user_high_ceiling_lock, TYPE_CPUFREQ_CEILING, PERF_LOCK_HIGH, "User High cpufreq_ceiling lock"); /* old user ceiling lock */
+	perf_lock_init(&user_cpu_perf_lock, TYPE_PERF_LOCK, PERF_LOCK_HIGHEST, "User CPU Highest Perflock"); 
+	perf_lock_init(&user_cpu_ceiling_lock, TYPE_CPUFREQ_CEILING, PERF_LOCK_HIGH, "User CPU High cpufreq_ceiling lock"); 
 	for (i = PERF_LOCK_LOWEST; i < PERF_LOCK_INVALID; i++) {
 		snprintf(perf_buf[i], 23, "User Perflock level(%d)", i);
 		perf_buf[i][23] = '\0';

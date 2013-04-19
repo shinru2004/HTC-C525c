@@ -2,7 +2,7 @@
  *
  * Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,30 +17,12 @@
 
 #include "audio_utils_aio.h"
 
-//htc audio ++
 #undef pr_info
 #undef pr_err
 #define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
 #define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
-//htc audio --
 
-static void q6_audio_mp3_cb(uint32_t opcode, uint32_t token,
-		uint32_t *payload, void *priv)
-{
-	struct q6audio_aio *audio = (struct q6audio_aio *)priv;
-
-	pr_debug("%s:opcde = %d token = 0x%x\n", __func__, opcode, token);
-	switch (opcode) {
-	case ASM_DATA_EVENT_WRITE_DONE:
-	case ASM_DATA_EVENT_READ_DONE:
-	case ASM_DATA_CMDRSP_EOS:
-		audio_aio_cb(opcode, token, payload, audio);
-		break;
-	default:
-		pr_debug("%s:Unhandled event = 0x%8x\n", __func__, opcode);
-		break;
-	}
-}
+#define Q6_EFFECT_DEBUG 0
 
 #ifdef CONFIG_DEBUG_FS
 static const struct file_operations audio_mp3_debug_fops = {
@@ -58,7 +40,7 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		pr_debug("%s[%p]: AUDIO_START session_id[%d]\n", __func__,
 						audio, audio->ac->session);
 		if (audio->feedback == NON_TUNNEL_MODE) {
-			/* Configure PCM output block */
+			
 			rc = q6asm_enc_cfg_blk_pcm(audio->ac,
 					audio->pcm_cfg.sample_rate,
 					audio->pcm_cfg.channel_count);
@@ -85,8 +67,75 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			audio->stopped = 0;
 		break;
 	}
+	case AUDIO_SET_Q6_EFFECT: {
+		struct param {
+			uint32_t effect_type; 
+			uint32_t module_id;
+			uint32_t param_id;
+			uint32_t payload_size;
+		} q6_param;
+		void *payload;
+
+		pr_aud_info("AUDIO_SET_Q6_EFFECT, session %d ++++\n", audio->ac->session);
+		if (copy_from_user(&q6_param, (void *) arg,
+					sizeof(q6_param))) {
+			pr_aud_err("%s: copy param from user failed\n",
+				__func__);
+			rc = -EFAULT;
+			break;
+		}
+
+		if (q6_param.payload_size <= 0 ||
+		    (q6_param.effect_type != 0 &&
+		     q6_param.effect_type != 1)) {
+			pr_aud_err("%s: unsupported param: %d, 0x%x, 0x%x, %d\n",
+				__func__, q6_param.effect_type,
+				q6_param.module_id, q6_param.param_id,
+				q6_param.payload_size);
+			rc = -EINVAL;
+			break;
+		}
+
+		payload = kzalloc(q6_param.payload_size, GFP_KERNEL);
+		if (!payload) {
+			pr_aud_err("%s: failed to allocate memory\n",
+				__func__);
+			rc = -ENOMEM;
+			break;
+		}
+		if (copy_from_user(payload, (void *) (arg + sizeof(q6_param)),
+			q6_param.payload_size)) {
+			pr_aud_err("%s: copy payload from user failed\n",
+				__func__);
+			kfree(payload);
+			rc = -EFAULT;
+			break;;
+		}
+
+		if (q6_param.effect_type == 0) { 
+			rc = q6asm_enable_effect(audio->ac,
+						q6_param.module_id,
+						q6_param.param_id,
+						q6_param.payload_size,
+						payload);
+			pr_aud_info("q6asm_enable_effect, return %d (session %d)\n", rc, audio->ac->session);
+		}
+#if Q6_EFFECT_DEBUG
+		{
+			int *ptr;
+			int i;
+			ptr = (int *)payload;
+			for (i = 0; i < (q6_param.payload_size / 4); i++)
+				pr_aud_info("0x%08x", *(ptr + i));
+		}
+#endif
+		kfree(payload);
+		pr_aud_info("AUDIO_SET_Q6_EFFECT, session %d ---\n", audio->ac->session);
+		break;
+	}
+
 	default:
-		pr_debug("%s[%p]: Calling utils ioctl\n", __func__, audio);
+		
 		rc = audio->codec_ioctl(file, cmd, arg);
 	}
 	return rc;
@@ -96,9 +145,20 @@ static int audio_open(struct inode *inode, struct file *file)
 {
 	struct q6audio_aio *audio = NULL;
 	int rc = 0;
+	struct asm_softpause_params softpause = {
+		.enable = SOFT_PAUSE_ENABLE,
+		.period = SOFT_PAUSE_PERIOD * 3,
+		.step = SOFT_PAUSE_STEP,
+		.rampingcurve = SOFT_PAUSE_CURVE_LINEAR,
+	};
+	struct asm_softvolume_params softvol = {
+		.period = SOFT_VOLUME_PERIOD,
+		.step = SOFT_VOLUME_STEP,
+		.rampingcurve = SOFT_VOLUME_CURVE_LINEAR,
+	};
 
 #ifdef CONFIG_DEBUG_FS
-	/* 4 bytes represents decoder number, 1 byte for terminate string */
+	
 	char name[sizeof "msm_mp3_" + 5];
 #endif
 	audio = kzalloc(sizeof(struct q6audio_aio), GFP_KERNEL);
@@ -110,7 +170,7 @@ static int audio_open(struct inode *inode, struct file *file)
 
 	audio->pcm_cfg.buffer_size = PCM_BUFSZ_MIN;
 
-	audio->ac = q6asm_audio_client_alloc((app_cb) q6_audio_mp3_cb,
+	audio->ac = q6asm_audio_client_alloc((app_cb) q6_audio_cb,
 					     (void *)audio);
 
 	if (!audio->ac) {
@@ -119,7 +179,7 @@ static int audio_open(struct inode *inode, struct file *file)
 		return -ENOMEM;
 	}
 
-	/* open in T/NT mode */
+	
 	if ((file->f_mode & FMODE_WRITE) && (file->f_mode & FMODE_READ)) {
 		rc = q6asm_open_read_write(audio->ac, FORMAT_LINEAR_PCM,
 					   FORMAT_MP3);
@@ -129,8 +189,6 @@ static int audio_open(struct inode *inode, struct file *file)
 			goto fail;
 		}
 		audio->feedback = NON_TUNNEL_MODE;
-		/* open MP3 decoder, expected frames is always 1
-		audio->buf_cfg.frames_per_buf = 0x01;*/
 		audio->buf_cfg.meta_info_enable = 0x01;
 	} else if ((file->f_mode & FMODE_WRITE) &&
 			!(file->f_mode & FMODE_READ)) {
@@ -158,6 +216,29 @@ static int audio_open(struct inode *inode, struct file *file)
 	if (IS_ERR(audio->dentry))
 		pr_debug("debugfs_create_file failed\n");
 #endif
+
+	if (softpause.rampingcurve == SOFT_PAUSE_CURVE_LINEAR)
+		softpause.step = SOFT_PAUSE_STEP_LINEAR;
+	if (softvol.rampingcurve == SOFT_VOLUME_CURVE_LINEAR)
+		softvol.step = SOFT_VOLUME_STEP_LINEAR;
+	rc = q6asm_set_volume(audio->ac, 0);
+	if (rc < 0)
+		pr_err("%s: Send Volume command failed rc=%d\n",
+			__func__, rc);
+	rc = q6asm_set_softpause(audio->ac, &softpause);
+	if (rc < 0)
+		pr_err("%s: Send SoftPause Param failed rc=%d\n",
+			__func__, rc);
+	rc = q6asm_set_softvolume(audio->ac, &softvol);
+	if (rc < 0)
+		pr_err("%s: Send SoftVolume Param failed rc=%d\n",
+			__func__, rc);
+	
+	rc = q6asm_set_mute(audio->ac, 0);
+	if (rc < 0)
+		pr_err("%s: Send mute command failed rc=%d\n",
+			__func__, rc);
+
 	pr_info("%s:mp3dec success mode[%d]session[%d]\n", __func__,
 						audio->feedback,
 						audio->ac->session);

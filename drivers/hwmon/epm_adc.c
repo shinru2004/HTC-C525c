@@ -11,6 +11,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/fs.h>
 #include <linux/mutex.h>
@@ -28,30 +29,25 @@
 
 #define EPM_ADC_DRIVER_NAME		"epm_adc"
 #define EPM_ADC_MAX_FNAME		20
-#define EPM_ADC_CONVERSION_DELAY	100 /* milliseconds */
-/* Command Bits */
+#define EPM_ADC_CONVERSION_DELAY	100 
 #define EPM_ADC_ADS_SPI_BITS_PER_WORD	8
 #define EPM_ADC_ADS_DATA_READ_CMD	(0x1 << 5)
 #define EPM_ADC_ADS_REG_READ_CMD	(0x2 << 5)
 #define EPM_ADC_ADS_REG_WRITE_CMD	(0x3 << 5)
 #define EPM_ADC_ADS_PULSE_CONVERT_CMD	(0x4 << 5)
 #define EPM_ADC_ADS_MULTIPLE_REG_ACCESS	(0x1 << 4)
-/* Register map */
 #define EPM_ADC_ADS_CONFIG0_REG_ADDR	0x0
 #define EPM_ADC_ADS_CONFIG1_REG_ADDR	0x1
 #define EPM_ADC_ADS_MUXSG0_REG_ADDR	0x4
 #define EPM_ADC_ADS_MUXSG1_REG_ADDR	0x5
-/* Register map default data */
 #define EPM_ADC_ADS_REG0_DEFAULT	0x2
 #define EPM_ADC_ADS_REG1_DEFAULT	0x52
 #define EPM_ADC_ADS_CHANNEL_DATA_CHID	0x1f
-/* Channel ID */
 #define EPM_ADC_ADS_CHANNEL_OFFSET	0x18
 #define EPM_ADC_ADS_CHANNEL_VCC		0x1a
 #define EPM_ADC_ADS_CHANNEL_TEMP	0x1b
 #define EPM_ADC_ADS_CHANNEL_GAIN	0x1c
 #define EPM_ADC_ADS_CHANNEL_REF		0x1d
-/* Scaling data co-efficients */
 #define EPM_ADC_SCALE_MILLI		1000
 #define EPM_ADC_SCALE_CODE_VOLTS	3072
 #define EPM_ADC_SCALE_CODE_GAIN		30720
@@ -70,8 +66,6 @@
 struct epm_adc_drv {
 	struct platform_device		*pdev;
 	struct device			*hwmon;
-	struct sensor_device_attribute	*sens_attr;
-	char				**fnames;
 	struct spi_device		*epm_spi_client;
 	struct mutex			conv_lock;
 	uint32_t			bus_id;
@@ -482,12 +476,12 @@ static int epm_adc_ads_scale_result(struct epm_adc_drv *epm_adc,
 					conv->channel_idx;
 	int32_t *adc_scaled_data = &conv->physical;
 
-	/* Get the channel number */
+	
 	channel_num = (adc_raw_data[0] & EPM_ADC_ADS_CHANNEL_DATA_CHID);
 	sign_bit    = 1;
-	/* This is the 16-bit raw data */
+	
 	*adc_scaled_data = ((adc_raw_data[1] << 8) | adc_raw_data[2]);
-	/* Obtain the internal system reading */
+	
 	if (channel_num == EPM_ADC_ADS_CHANNEL_VCC) {
 		*adc_scaled_data *= EPM_ADC_SCALE_MILLI;
 		*adc_scaled_data /= EPM_ADC_SCALE_CODE_VOLTS;
@@ -497,21 +491,16 @@ static int epm_adc_ads_scale_result(struct epm_adc_drv *epm_adc,
 		*adc_scaled_data *= EPM_ADC_SCALE_MILLI;
 		*adc_scaled_data /= EPM_ADC_SCALE_CODE_VOLTS;
 	} else if (channel_num == EPM_ADC_ADS_CHANNEL_TEMP) {
-		/* Convert Code to micro-volts */
-		/* Use this formula to get the temperature reading */
+		
+		
 		*adc_scaled_data -= EPM_ADC_TEMP_TO_DEGC_COEFF;
 		*adc_scaled_data /= EPM_ADC_TEMP_SENSOR_COEFF;
 	} else if (channel_num == EPM_ADC_ADS_CHANNEL_OFFSET) {
-		/* The offset should be zero */
+		
 		pr_debug("%s: ADC Channel Offset\n", __func__);
 		return -EFAULT;
 	} else {
 		channel_num -= EPM_ADC_CHANNEL_AIN_OFFSET;
-		/*
-		 * Conversion for the adc channels.
-		 * mvVRef is in milli-volts and resistorValue is in micro-ohms.
-		 * Hence, I = V/R gives us current in kilo-amps.
-		 */
 		if (*adc_scaled_data & EPM_ADC_MAX_NEGATIVE_SCALE_CODE) {
 			sign_bit = -1;
 			*adc_scaled_data = (~*adc_scaled_data
@@ -519,20 +508,20 @@ static int epm_adc_ads_scale_result(struct epm_adc_drv *epm_adc,
 		}
 		if (*adc_scaled_data != 0) {
 			*adc_scaled_data *= EPM_ADC_SCALE_FACTOR;
-			 /* Device is calibrated for 1LSB = VREF/7800h.*/
+			 
 			*adc_scaled_data *= EPM_ADC_MILLI_VOLTS_SOURCE;
 			*adc_scaled_data /= EPM_ADC_VREF_CODE;
-			 /* Data will now be in micro-volts.*/
+			 
 			*adc_scaled_data *= EPM_ADC_SCALE_MILLI;
-			 /* Divide by amplifier gain value.*/
+			 
 			*adc_scaled_data /= pdata->channel[chan_idx].gain;
-			 /* Data will now be in nano-volts.*/
+			 
 			*adc_scaled_data /= EPM_ADC_SCALE_FACTOR;
 			*adc_scaled_data *= EPM_ADC_SCALE_MILLI;
-			 /* Data is now in micro-amps.*/
+			 
 			*adc_scaled_data /=
 				pdata->channel[chan_idx].resistorValue;
-			 /* Set the sign bit for lekage current. */
+			 
 			*adc_scaled_data *= sign_bit;
 		}
 	}
@@ -556,27 +545,27 @@ static int epm_adc_blocking_conversion(struct epm_adc_drv *epm_adc,
 	}
 
 	if (conv->channel_idx < pdata->chan_per_mux) {
-		/* Reset MUXSG1_REGISTER */
+		
 		rc = epm_adc_ads_spi_write(epm_adc, EPM_ADC_ADS_MUXSG1_REG_ADDR,
 							0x0);
 		if (rc)
 			goto conv_err;
 
 		mux_chan_idx = 1 << conv->channel_idx;
-		/* Select Channel index in MUXSG0_REGISTER */
+		
 		rc = epm_adc_ads_spi_write(epm_adc, EPM_ADC_ADS_MUXSG0_REG_ADDR,
 				mux_chan_idx);
 		if (rc)
 			goto conv_err;
 	} else {
-		/* Reset MUXSG0_REGISTER */
+		
 		rc = epm_adc_ads_spi_write(epm_adc, EPM_ADC_ADS_MUXSG0_REG_ADDR,
 							0x0);
 		if (rc)
 			goto conv_err;
 
 		mux_chan_idx = 1 << (conv->channel_idx - pdata->chan_per_mux);
-		/* Select Channel index in MUXSG1_REGISTER */
+		
 		rc = epm_adc_ads_spi_write(epm_adc, EPM_ADC_ADS_MUXSG1_REG_ADDR,
 				mux_chan_idx);
 		if (rc)
@@ -722,60 +711,57 @@ static ssize_t epm_adc_show_in(struct device *dev,
 	return snprintf(buf, 16, "Result: %d\n", conv.physical);
 }
 
-static struct sensor_device_attribute epm_adc_in_attr =
-	SENSOR_ATTR(NULL, S_IRUGO, epm_adc_show_in, NULL, 0);
+static struct sensor_device_attribute epm_adc_in_attrs[] = {
+	SENSOR_ATTR(ads0_chan0,  S_IRUGO, epm_adc_show_in, NULL, 0),
+	SENSOR_ATTR(ads0_chan1,  S_IRUGO, epm_adc_show_in, NULL, 1),
+	SENSOR_ATTR(ads0_chan2,  S_IRUGO, epm_adc_show_in, NULL, 2),
+	SENSOR_ATTR(ads0_chan3,  S_IRUGO, epm_adc_show_in, NULL, 3),
+	SENSOR_ATTR(ads0_chan4,  S_IRUGO, epm_adc_show_in, NULL, 4),
+	SENSOR_ATTR(ads0_chan5,  S_IRUGO, epm_adc_show_in, NULL, 5),
+	SENSOR_ATTR(ads0_chan6,  S_IRUGO, epm_adc_show_in, NULL, 6),
+	SENSOR_ATTR(ads0_chan7,  S_IRUGO, epm_adc_show_in, NULL, 7),
+	SENSOR_ATTR(ads0_chan8,  S_IRUGO, epm_adc_show_in, NULL, 8),
+	SENSOR_ATTR(ads0_chan9,  S_IRUGO, epm_adc_show_in, NULL, 9),
+	SENSOR_ATTR(ads0_chan10, S_IRUGO, epm_adc_show_in, NULL, 10),
+	SENSOR_ATTR(ads0_chan11, S_IRUGO, epm_adc_show_in, NULL, 11),
+	SENSOR_ATTR(ads0_chan12, S_IRUGO, epm_adc_show_in, NULL, 12),
+	SENSOR_ATTR(ads0_chan13, S_IRUGO, epm_adc_show_in, NULL, 13),
+	SENSOR_ATTR(ads0_chan14, S_IRUGO, epm_adc_show_in, NULL, 14),
+	SENSOR_ATTR(ads0_chan15, S_IRUGO, epm_adc_show_in, NULL, 15),
+	SENSOR_ATTR(ads1_chan0,  S_IRUGO, epm_adc_show_in, NULL, 16),
+	SENSOR_ATTR(ads1_chan1,  S_IRUGO, epm_adc_show_in, NULL, 17),
+	SENSOR_ATTR(ads1_chan2,  S_IRUGO, epm_adc_show_in, NULL, 18),
+	SENSOR_ATTR(ads1_chan3,  S_IRUGO, epm_adc_show_in, NULL, 19),
+	SENSOR_ATTR(ads1_chan4,  S_IRUGO, epm_adc_show_in, NULL, 20),
+	SENSOR_ATTR(ads1_chan5,  S_IRUGO, epm_adc_show_in, NULL, 21),
+	SENSOR_ATTR(ads1_chan6,  S_IRUGO, epm_adc_show_in, NULL, 22),
+	SENSOR_ATTR(ads1_chan7,  S_IRUGO, epm_adc_show_in, NULL, 23),
+	SENSOR_ATTR(ads1_chan8,  S_IRUGO, epm_adc_show_in, NULL, 24),
+	SENSOR_ATTR(ads1_chan9,  S_IRUGO, epm_adc_show_in, NULL, 25),
+	SENSOR_ATTR(ads1_chan10, S_IRUGO, epm_adc_show_in, NULL, 26),
+	SENSOR_ATTR(ads1_chan11, S_IRUGO, epm_adc_show_in, NULL, 27),
+	SENSOR_ATTR(ads1_chan12, S_IRUGO, epm_adc_show_in, NULL, 28),
+	SENSOR_ATTR(ads1_chan13, S_IRUGO, epm_adc_show_in, NULL, 29),
+	SENSOR_ATTR(ads1_chan14, S_IRUGO, epm_adc_show_in, NULL, 30),
+	SENSOR_ATTR(ads1_chan15, S_IRUGO, epm_adc_show_in, NULL, 31),
+};
 
 static int __devinit epm_adc_init_hwmon(struct platform_device *pdev,
 					       struct epm_adc_drv *epm_adc)
 {
 	struct epm_adc_platform_data *pdata = pdev->dev.platform_data;
-	int num_chans = pdata->num_channels, dev_idx = 0, chan_idx = 0;
-	int i = 0, rc = 0;
-	const char prefix[] = "ads", postfix[] = "_chan";
-	char tmpbuf[3];
+	int i, rc, num_chans = pdata->num_channels;
 
-	epm_adc->fnames = devm_kzalloc(&pdev->dev,
-				num_chans * EPM_ADC_MAX_FNAME +
-				num_chans * sizeof(char *), GFP_KERNEL);
-	if (!epm_adc->fnames) {
-		dev_err(&pdev->dev, "Unable to allocate memory\n");
-		return -ENOMEM;
-	}
-
-	epm_adc->sens_attr = devm_kzalloc(&pdev->dev, num_chans *
-			    sizeof(struct sensor_device_attribute), GFP_KERNEL);
-	if (!epm_adc->sens_attr) {
-		dev_err(&pdev->dev, "Unable to allocate memory\n");
-		rc = -ENOMEM;
-	}
-
-	for (i = 0; i < num_chans; i++, chan_idx++) {
-		epm_adc->fnames[i] = (char *)epm_adc->fnames +
-			(i * EPM_ADC_MAX_FNAME) + (num_chans *
-			sizeof(char *));
-		if (chan_idx == pdata->chan_per_adc) {
-			chan_idx = 0;
-			dev_idx++;
-		}
-		strlcpy(epm_adc->fnames[i], prefix, EPM_ADC_MAX_FNAME);
-		snprintf(tmpbuf, sizeof(tmpbuf), "%d", dev_idx);
-		strlcat(epm_adc->fnames[i], tmpbuf, EPM_ADC_MAX_FNAME);
-		strlcat(epm_adc->fnames[i], postfix, EPM_ADC_MAX_FNAME);
-		snprintf(tmpbuf, sizeof(tmpbuf), "%d", chan_idx);
-		strlcat(epm_adc->fnames[i], tmpbuf, EPM_ADC_MAX_FNAME);
-		epm_adc_in_attr.index = i;
-		epm_adc_in_attr.dev_attr.attr.name = epm_adc->fnames[i];
-		memcpy(&epm_adc->sens_attr[i], &epm_adc_in_attr,
-						sizeof(epm_adc_in_attr));
+	for (i = 0; i < num_chans; i++) {
 		rc = device_create_file(&pdev->dev,
-				&epm_adc->sens_attr[i].dev_attr);
+				&epm_adc_in_attrs[i].dev_attr);
 		if (rc) {
 			dev_err(&pdev->dev, "device_create_file failed\n");
 			return rc;
 		}
 	}
 
-	return rc;
+	return 0;
 }
 
 static int __devinit epm_adc_spi_probe(struct spi_device *spi)
@@ -865,10 +851,8 @@ static int __devexit epm_adc_remove(struct platform_device *pdev)
 	int num_chans = pdata->num_channels;
 	int i = 0;
 
-	if (epm_adc->sens_attr)
-		for (i = 0; i < num_chans; i++)
-			device_remove_file(&pdev->dev,
-					&epm_adc->sens_attr[i].dev_attr);
+	for (i = 0; i < num_chans; i++)
+		device_remove_file(&pdev->dev, &epm_adc_in_attrs[i].dev_attr);
 	hwmon_device_unregister(epm_adc->hwmon);
 	misc_deregister(&epm_adc->misc);
 	epm_adc = NULL;

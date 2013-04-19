@@ -11,6 +11,7 @@
  *
  */
 
+#include <linux/module.h>
 #include <linux/types.h>
 #include <linux/list.h>
 #include <linux/ioctl.h>
@@ -91,6 +92,7 @@ struct wfd_inst {
 	u32 out_buf_size;
 	struct list_head input_mem_list;
 	struct wfd_stats stats;
+	struct completion stop_mdp_thread;
 };
 
 struct wfd_vid_buffer {
@@ -98,8 +100,10 @@ struct wfd_vid_buffer {
 };
 
 static int wfd_vidbuf_queue_setup(struct vb2_queue *q,
-		unsigned int *num_buffers, unsigned int *num_planes,
-		unsigned long sizes[], void *alloc_ctxs[])
+				   const struct v4l2_format *fmt,
+				   unsigned int *num_buffers,
+				   unsigned int *num_planes,
+				   unsigned int sizes[], void *alloc_ctxs[])
 {
 	struct file *priv_data = (struct file *)(q->drv_priv);
 	struct wfd_inst *inst = (struct wfd_inst *)priv_data->private_data;
@@ -206,7 +210,6 @@ alloc_fail:
 	return rc;
 }
 
-/* Doesn't do iommu unmap */
 static int wfd_free_ion_buffer(struct ion_client *client,
 		struct mem_region *mregion)
 {
@@ -278,7 +281,7 @@ int wfd_allocate_input_buffers(struct wfd_device *wfd_dev,
 		rc = v4l2_subdev_call(&wfd_dev->enc_sdev, core, ioctl,
 				SET_INPUT_BUFFER, (void *)enc_mregion);
 
-		/* map the buffer from encoder to mdp */
+		
 		mdp_mregion->kvaddr = enc_mregion->kvaddr;
 		mdp_mregion->size = enc_mregion->size;
 		mdp_mregion->offset = enc_mregion->offset;
@@ -470,7 +473,7 @@ int wfd_vidbuf_buf_init(struct vb2_buffer *vb)
 	mregion.fd = minfo->fd;
 	mregion.offset = minfo->offset;
 	mregion.cookie = (u32)vb;
-	/*TODO: should be fixed in kernel 3.2*/
+	
 	mregion.size =  inst->out_buf_size;
 
 	if (inst && !inst->vid_bufq.streaming) {
@@ -532,7 +535,7 @@ void wfd_vidbuf_buf_cleanup(struct vb2_buffer *vb)
 
 static int mdp_output_thread(void *data)
 {
-	int rc = 0;
+	int rc = 0, no_sig_wait = 0;
 	struct file *filp = (struct file *)data;
 	struct wfd_inst *inst = filp->private_data;
 	struct wfd_device *wfd_dev =
@@ -541,6 +544,14 @@ static int mdp_output_thread(void *data)
 	struct mem_region *mregion;
 	struct vsg_buf_info ibuf_vsg;
 	while (!kthread_should_stop()) {
+		if (rc) {
+			WFD_MSG_DBG("%s() error in output thread\n", __func__);
+			if (!no_sig_wait) {
+				wait_for_completion(&inst->stop_mdp_thread);
+				no_sig_wait = 1;
+			}
+			continue;
+		}
 		WFD_MSG_DBG("waiting for mdp output\n");
 		rc = v4l2_subdev_call(&wfd_dev->mdp_sdev,
 			core, ioctl, MDP_DQ_BUFFER, (void *)&obuf_mdp);
@@ -550,7 +561,7 @@ static int mdp_output_thread(void *data)
 				WFD_MSG_ERR("MDP reported err %d\n", rc);
 
 			WFD_MSG_ERR("Streamoff called\n");
-			break;
+			continue;
 		} else {
 			wfd_stats_update(&inst->stats,
 				WFD_STAT_EVENT_MDP_DEQUEUE);
@@ -560,7 +571,7 @@ static int mdp_output_thread(void *data)
 		if (!mregion) {
 			WFD_MSG_ERR("mdp cookie is null\n");
 			rc = -EINVAL;
-			break;
+			continue;
 		}
 
 		ibuf_vsg.mdp_buf_info = obuf_mdp;
@@ -575,7 +586,7 @@ static int mdp_output_thread(void *data)
 
 		if (rc) {
 			WFD_MSG_ERR("Failed to queue frame to vsg\n");
-			break;
+			continue;
 		} else {
 			wfd_stats_update(&inst->stats,
 				WFD_STAT_EVENT_VSG_QUEUE);
@@ -585,7 +596,7 @@ static int mdp_output_thread(void *data)
 	return rc;
 }
 
-int wfd_vidbuf_start_streaming(struct vb2_queue *q)
+int wfd_vidbuf_start_streaming(struct vb2_queue *q, unsigned int count)
 {
 	struct file *priv_data = (struct file *)(q->drv_priv);
 	struct wfd_device *wfd_dev =
@@ -609,7 +620,7 @@ int wfd_vidbuf_start_streaming(struct vb2_queue *q)
 		WFD_MSG_ERR("Failed to start vsg\n");
 		goto subdev_start_fail;
 	}
-
+	init_completion(&inst->stop_mdp_thread);
 	inst->mdp_task = kthread_run(mdp_output_thread, priv_data,
 				"mdp_output_thread");
 	if (IS_ERR(inst->mdp_task)) {
@@ -644,6 +655,7 @@ int wfd_vidbuf_stop_streaming(struct vb2_queue *q)
 	if (rc)
 		WFD_MSG_ERR("Failed to stop VSG\n");
 
+	complete(&inst->stop_mdp_thread);
 	kthread_stop(inst->mdp_task);
 	rc = v4l2_subdev_call(&wfd_dev->enc_sdev, core, ioctl,
 			ENCODE_FLUSH, (void *)inst->venc_inst);
@@ -987,7 +999,7 @@ static int wfdioc_g_parm(struct file *filp, void *fh,
 	struct wfd_device *wfd_dev = video_drvdata(filp);
 	struct wfd_inst *inst = filp->private_data;
 	int64_t frame_interval = 0,
-		max_frame_interval = 0; /* both in nsecs*/
+		max_frame_interval = 0; 
 	struct v4l2_qcom_frameskip frameskip, *usr_frameskip;
 
 	usr_frameskip = (struct v4l2_qcom_frameskip *)
@@ -1044,7 +1056,8 @@ static int wfdioc_s_parm(struct file *filp, void *fh,
 	struct v4l2_qcom_frameskip frameskip;
 	int64_t frame_interval, max_frame_interval;
 	void *extendedmode = NULL;
-	enum vsg_modes mode = VSG_MODE_VFR;
+	enum vsg_modes vsg_mode = VSG_MODE_VFR;
+	enum venc_framerate_modes venc_mode = VENC_MODE_VFR;
 
 
 	if (a->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
@@ -1066,6 +1079,7 @@ static int wfdioc_s_parm(struct file *filp, void *fh,
 			rc = -EINVAL;
 			goto set_parm_fail;
 		}
+		venc_mode = VENC_MODE_CFR;
 		frame_interval =
 			a->parm.capture.timeperframe.numerator * NSEC_PER_SEC /
 			a->parm.capture.timeperframe.denominator;
@@ -1094,7 +1108,7 @@ static int wfdioc_s_parm(struct file *filp, void *fh,
 			goto set_parm_fail;
 
 		max_frame_interval = (int64_t)frameskip.maxframeinterval;
-		mode = VSG_MODE_VFR;
+		vsg_mode = VSG_MODE_VFR;
 
 		rc = v4l2_subdev_call(&wfd_dev->vsg_sdev, core,
 				ioctl, VSG_SET_MAX_FRAME_INTERVAL,
@@ -1104,18 +1118,22 @@ static int wfdioc_s_parm(struct file *filp, void *fh,
 			goto set_parm_fail;
 
 		rc = v4l2_subdev_call(&wfd_dev->vsg_sdev, core,
-				ioctl, VSG_SET_MODE, &mode);
+				ioctl, VSG_SET_MODE, &vsg_mode);
 
 		if (rc)
 			goto set_parm_fail;
 	} else {
-		mode = VSG_MODE_CFR;
+		vsg_mode = VSG_MODE_CFR;
 		rc = v4l2_subdev_call(&wfd_dev->vsg_sdev, core,
-				ioctl, VSG_SET_MODE, &mode);
+				ioctl, VSG_SET_MODE, &vsg_mode);
 
 		if (rc)
 			goto set_parm_fail;
 	}
+
+	rc = v4l2_subdev_call(&wfd_dev->enc_sdev, core,
+			ioctl, SET_FRAMERATE_MODE,
+			&venc_mode);
 
 set_parm_fail:
 	return rc;
@@ -1252,7 +1270,7 @@ void *wfd_vb2_mem_ops_get_userptr(void *alloc_ctx, unsigned long vaddr,
 
 void wfd_vb2_mem_ops_put_userptr(void *buf_priv)
 {
-	/*TODO: Free the list*/
+	
 }
 
 void *wfd_vb2_mem_ops_cookie(void *buf_priv)
@@ -1492,7 +1510,7 @@ err_v4l2_registration:
 static int __devinit __wfd_probe(struct platform_device *pdev)
 {
 	int rc = 0, c = 0;
-	struct wfd_device *wfd_dev; /* Should be taken as an array*/
+	struct wfd_device *wfd_dev; 
 	struct ion_client *ion_client = NULL;
 	struct msm_wfd_platform_data *wfd_priv;
 
@@ -1518,7 +1536,7 @@ static int __devinit __wfd_probe(struct platform_device *pdev)
 	rc = wfd_stats_setup();
 	if (rc) {
 		WFD_MSG_ERR("No debugfs support: %d\n", rc);
-		/* Don't treat this as a fatal err */
+		
 		rc = 0;
 	}
 
@@ -1533,7 +1551,7 @@ static int __devinit __wfd_probe(struct platform_device *pdev)
 			WFD_DEVICE_NUMBER_BASE + c, pdev);
 
 		if (rc) {
-			/* Clear out old devices */
+			
 			for (--c; c >= 0; --c) {
 				v4l2_device_unregister_subdev(
 						&wfd_dev[c].vsg_sdev);
@@ -1549,7 +1567,7 @@ static int __devinit __wfd_probe(struct platform_device *pdev)
 			goto err_v4l2_probe;
 		}
 
-		/* Other device specific stuff */
+		
 		mutex_init(&wfd_dev[c].dev_lock);
 		wfd_dev[c].ion_client = ion_client;
 		wfd_dev[c].in_use = false;

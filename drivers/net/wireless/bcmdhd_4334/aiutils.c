@@ -231,17 +231,27 @@ ai_scan(si_t *sih, void *regs, uint devid)
 		
 		asd = get_asd(sih, &eromptr, 0, 0, AD_ST_SLAVE, &addrl, &addrh, &sizel, &sizeh);
 		if (asd == 0) {
+			do {
 			
 			asd = get_asd(sih, &eromptr, 0, 0, AD_ST_BRIDGE, &addrl, &addrh,
 			              &sizel, &sizeh);
 			if (asd != 0)
 				br = TRUE;
-			else
-				if ((addrh != 0) || (sizeh != 0) || (sizel != SI_CORE_SIZE)) {
-					SI_ERROR(("First Slave ASD for core 0x%04x malformed "
+			else {
+					if (br == TRUE) {
+						break;
+					}
+					else if ((addrh != 0) || (sizeh != 0) ||
+						(sizel != SI_CORE_SIZE)) {
+						SI_ERROR(("addrh = 0x%x\t sizeh = 0x%x\t size1 ="
+							"0x%x\n", addrh, sizeh, sizel));
+						SI_ERROR(("First Slave ASD for"
+							"core 0x%04x malformed "
 					          "(0x%08x)\n", cid, asd));
-					goto error;
-				}
+						goto error;
+					}
+			}
+			} while (1);
 		}
 		sii->coresba[idx] = addrl;
 		sii->coresba_size[idx] = sizel;

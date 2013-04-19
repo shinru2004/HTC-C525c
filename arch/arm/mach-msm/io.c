@@ -20,12 +20,13 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/io.h>
-#include <linux/module.h>
+#include <linux/export.h>
 
 #include <mach/hardware.h>
 #include <asm/page.h>
 #include <mach/msm_iomap.h>
 #include <asm/mach/map.h>
+#include <linux/dma-mapping.h>
 
 #include <mach/board.h>
 
@@ -33,14 +34,11 @@
 		.virtual = (unsigned long) MSM_##name##_BASE, \
 		.pfn = __phys_to_pfn(chip##_##name##_PHYS), \
 		.length = chip##_##name##_SIZE, \
-		.type = MT_DEVICE_NONSHARED, \
+		.type = MT_DEVICE, \
 	 }
 
 #define MSM_DEVICE(name) MSM_CHIP_DEVICE(name, MSM)
 
-/* msm_shared_ram_phys default value of 0x00100000 is the most common value
- * and should work as-is for any target without stacked memory.
- */
 unsigned int msm_shared_ram_phys = 0x00100000;
 
 static void __init msm_map_io(struct map_desc *io_desc, int size)
@@ -87,14 +85,7 @@ static struct map_desc msm_io_desc[] __initdata = {
 
 void __init msm_map_common_io(void)
 {
-	/*Peripheral port memory remap, nothing looks to be there for
-	 * cortex a5.
-	 */
 #ifndef CONFIG_ARCH_MSM_CORTEX_A5
-	/* Make sure the peripheral register window is closed, since
-	 * we will use PTE flags (TEX[1]=1,B=0,C=1) to determine which
-	 * pages are peripheral interface or not.
-	 */
 	asm("mcr p15, 0, %0, c15, c2, 4" : : "r" (0));
 #endif
 	msm_map_io(msm_io_desc, ARRAY_SIZE(msm_io_desc));
@@ -129,7 +120,7 @@ void __init msm_map_qsd8x50_io(void)
 {
 	msm_map_io(qsd8x50_io_desc, ARRAY_SIZE(qsd8x50_io_desc));
 }
-#endif /* CONFIG_ARCH_QSD8X50 */
+#endif 
 
 #ifdef CONFIG_ARCH_MSM8X60
 static struct map_desc msm8x60_io_desc[] __initdata = {
@@ -163,13 +154,16 @@ static struct map_desc msm8x60_io_desc[] __initdata = {
 		.type =     MT_DEVICE,
 	},
 	MSM_DEVICE(QFPROM),
+	MSM_DEVICE(KERNEL_FOOTPRINT),
+	MSM_DEVICE(KALLSYMS_SAVE),
 };
 
 void __init msm_map_msm8x60_io(void)
 {
 	msm_map_io(msm8x60_io_desc, ARRAY_SIZE(msm8x60_io_desc));
+	init_consistent_dma_size(14*SZ_1M);
 }
-#endif /* CONFIG_ARCH_MSM8X60 */
+#endif 
 
 #ifdef CONFIG_ARCH_MSM8960
 static struct map_desc msm8960_io_desc[] __initdata = {
@@ -203,13 +197,14 @@ static struct map_desc msm8960_io_desc[] __initdata = {
 #endif
 	MSM_CHIP_DEVICE(QFPROM, MSM8960),
 	MSM_DEVICE(KERNEL_FOOTPRINT),
+	MSM_DEVICE(KALLSYMS_SAVE),
 };
 
 void __init msm_map_msm8960_io(void)
 {
 	msm_map_io(msm8960_io_desc, ARRAY_SIZE(msm8960_io_desc));
 }
-#endif /* CONFIG_ARCH_MSM8960 */
+#endif 
 
 #ifdef CONFIG_ARCH_MSM8930
 static struct map_desc msm8930_io_desc[] __initdata = {
@@ -250,7 +245,7 @@ void __init msm_map_msm8930_io(void)
 {
 	msm_map_io(msm8930_io_desc, ARRAY_SIZE(msm8930_io_desc));
 }
-#endif /* CONFIG_ARCH_MSM8930 */
+#endif 
 
 #ifdef CONFIG_ARCH_APQ8064
 static struct map_desc apq8064_io_desc[] __initdata = {
@@ -284,6 +279,8 @@ static struct map_desc apq8064_io_desc[] __initdata = {
 	},
 	MSM_CHIP_DEVICE(QFPROM, APQ8064),
 	MSM_CHIP_DEVICE(SIC_NON_SECURE, APQ8064),
+	MSM_DEVICE(KERNEL_FOOTPRINT),
+	MSM_DEVICE(KALLSYMS_SAVE),
 #ifdef CONFIG_DEBUG_APQ8064_UART
 	MSM_DEVICE(DEBUG_UART),
 #endif
@@ -293,30 +290,30 @@ void __init msm_map_apq8064_io(void)
 {
 	msm_map_io(apq8064_io_desc, ARRAY_SIZE(apq8064_io_desc));
 }
-#endif /* CONFIG_ARCH_APQ8064 */
+#endif 
 
-#ifdef CONFIG_ARCH_MSMCOPPER
-static struct map_desc msm_copper_io_desc[] __initdata = {
-	MSM_CHIP_DEVICE(QGIC_DIST, COPPER),
-	MSM_CHIP_DEVICE(QGIC_CPU, COPPER),
-	MSM_CHIP_DEVICE(APCS_GCC, COPPER),
-	MSM_CHIP_DEVICE(TLMM, COPPER),
+#ifdef CONFIG_ARCH_MSM8974
+static struct map_desc msm_8974_io_desc[] __initdata = {
+	MSM_CHIP_DEVICE(QGIC_DIST, MSM8974),
+	MSM_CHIP_DEVICE(QGIC_CPU, MSM8974),
+	MSM_CHIP_DEVICE(APCS_GCC, MSM8974),
+	MSM_CHIP_DEVICE(TLMM, MSM8974),
 	{
 		.virtual =  (unsigned long) MSM_SHARED_RAM_BASE,
 		.length =   MSM_SHARED_RAM_SIZE,
 		.type =     MT_DEVICE,
 	},
-#ifdef CONFIG_DEBUG_MSMCOPPER_UART
+#ifdef CONFIG_DEBUG_MSM8974_UART
 	MSM_DEVICE(DEBUG_UART),
 #endif
 };
 
-void __init msm_map_copper_io(void)
+void __init msm_map_8974_io(void)
 {
-	msm_shared_ram_phys = COPPER_MSM_SHARED_RAM_PHYS;
-	msm_map_io(msm_copper_io_desc, ARRAY_SIZE(msm_copper_io_desc));
+	msm_shared_ram_phys = MSM8974_MSM_SHARED_RAM_PHYS;
+	msm_map_io(msm_8974_io_desc, ARRAY_SIZE(msm_8974_io_desc));
 }
-#endif /* CONFIG_ARCH_MSMCOPPER */
+#endif 
 
 #ifdef CONFIG_ARCH_MSM7X30
 static struct map_desc msm7x30_io_desc[] __initdata = {
@@ -348,7 +345,7 @@ void __init msm_map_msm7x30_io(void)
 {
 	msm_map_io(msm7x30_io_desc, ARRAY_SIZE(msm7x30_io_desc));
 }
-#endif /* CONFIG_ARCH_MSM7X30 */
+#endif 
 
 #ifdef CONFIG_ARCH_FSM9XXX
 static struct map_desc fsm9xxx_io_desc[] __initdata = {
@@ -379,7 +376,7 @@ void __init msm_map_fsm9xxx_io(void)
 {
 	msm_map_io(fsm9xxx_io_desc, ARRAY_SIZE(fsm9xxx_io_desc));
 }
-#endif /* CONFIG_ARCH_FSM9XXX */
+#endif 
 
 #ifdef CONFIG_ARCH_MSM9615
 static struct map_desc msm9615_io_desc[] __initdata = {
@@ -410,7 +407,7 @@ void __init msm_map_msm9615_io(void)
 {
 	msm_map_io(msm9615_io_desc, ARRAY_SIZE(msm9615_io_desc));
 }
-#endif /* CONFIG_ARCH_MSM9615 */
+#endif 
 
 #ifdef CONFIG_ARCH_MSM8625
 static struct map_desc msm8625_io_desc[] __initdata = {
@@ -453,7 +450,7 @@ void __init msm_map_msm8625_io(void)
 }
 #else
 void __init msm_map_msm8625_io(void) { return; }
-#endif /* CONFIG_ARCH_MSM8625 */
+#endif 
 
 #ifdef CONFIG_ARCH_MSM9625
 static struct map_desc msm9625_io_desc[] __initdata = {
@@ -475,21 +472,4 @@ void __init msm_map_msm9625_io(void)
 	msm_shared_ram_phys = MSM9625_SHARED_RAM_PHYS;
 	msm_map_io(msm9625_io_desc, ARRAY_SIZE(msm9625_io_desc));
 }
-#endif /* CONFIG_ARCH_MSM9625 */
-
-
-void __iomem *
-__msm_ioremap(unsigned long phys_addr, size_t size, unsigned int mtype)
-{
-	if (mtype == MT_DEVICE) {
-		/* The peripherals in the 88000000 - F0000000 range
-		 * are only accessable by type MT_DEVICE_NONSHARED.
-		 * Adjust mtype as necessary to make this "just work."
-		 */
-		if ((phys_addr >= 0x88000000) && (phys_addr < 0xF0000000))
-			mtype = MT_DEVICE_NONSHARED;
-	}
-
-	return __arm_ioremap(phys_addr, size, mtype);
-}
-EXPORT_SYMBOL(__msm_ioremap);
+#endif 

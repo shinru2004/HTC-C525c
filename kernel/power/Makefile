@@ -1,8 +1,9 @@
 
 ccflags-$(CONFIG_PM_DEBUG)	:= -DDEBUG
 
+obj-y				+= qos.o
 obj-$(CONFIG_PM)		+= main.o
-obj-$(CONFIG_PM_SLEEP)		+= console.o
+obj-$(CONFIG_VT_CONSOLE_SLEEP)	+= console.o
 obj-$(CONFIG_FREEZER)		+= process.o
 obj-$(CONFIG_SUSPEND)		+= suspend.o
 obj-$(CONFIG_PM_TEST_SUSPEND)	+= suspend_test.o
@@ -17,4 +18,4 @@ obj-$(CONFIG_SUSPEND_TIME)	+= suspend_time.o
 
 obj-$(CONFIG_MAGIC_SYSRQ)	+= poweroff.o
 obj-$(CONFIG_HTC_PNPMGR)	+= htc_pnpmgr.o
-obj-$(CONFIG_SLACK_TIMER)	+= slack_timer.o
+obj-$(CONFIG_ADAPTIVE_TUNING)	+= adaptive_tuning.o

@@ -6,7 +6,7 @@
  * Released under the GPL, see the file COPYING for details.
  *
  * Simple token based thrashing protection, using the algorithm
- * described in:  http://www.cs.wm.edu/~sjiang/token.pdf
+ * described in: http://www.cse.ohio-state.edu/hpcs/WWW/HTML/publications/abs05-1.html
  *
  * Sep 2006, Ashwin Chaugule <ashwin.chaugule@celunite.com>
  * Improved algorithm to pass token:
@@ -29,9 +29,7 @@
 
 static DEFINE_SPINLOCK(swap_token_lock);
 struct mm_struct *swap_token_mm;
-struct mem_cgroup *swap_token_memcg;
-static unsigned int global_faults;
-static unsigned int last_aging;
+static struct mem_cgroup *swap_token_memcg;
 
 #ifdef CONFIG_CGROUP_MEM_RES_CTLR
 static struct mem_cgroup *swap_token_memcg_from_mm(struct mm_struct *mm)
@@ -55,6 +53,8 @@ void grab_swap_token(struct mm_struct *mm)
 {
 	int current_interval;
 	unsigned int old_prio = mm->token_priority;
+	static unsigned int global_faults;
+	static unsigned int last_aging;
 
 	global_faults++;
 
@@ -63,7 +63,7 @@ void grab_swap_token(struct mm_struct *mm)
 	if (!spin_trylock(&swap_token_lock))
 		return;
 
-	/* First come first served */
+	
 	if (!swap_token_mm)
 		goto replace_token;
 
@@ -84,7 +84,7 @@ void grab_swap_token(struct mm_struct *mm)
 			mm->token_priority--;
 	}
 
-	/* Check if we deserve the token */
+	
 	if (mm->token_priority > swap_token_mm->token_priority)
 		goto replace_token;
 
@@ -106,7 +106,6 @@ replace_token:
 	goto out;
 }
 
-/* Called on process exit. */
 void __put_swap_token(struct mm_struct *mm)
 {
 	spin_lock(&swap_token_lock);
@@ -131,7 +130,7 @@ static bool match_memcg(struct mem_cgroup *a, struct mem_cgroup *b)
 
 void disable_swap_token(struct mem_cgroup *memcg)
 {
-	/* memcg reclaim don't disable unrelated mm token. */
+	
 	if (match_memcg(memcg, swap_token_memcg)) {
 		spin_lock(&swap_token_lock);
 		if (match_memcg(memcg, swap_token_memcg)) {

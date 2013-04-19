@@ -15,6 +15,7 @@
 
 #define pr_fmt(fmt)	"%s: " fmt, __func__
 
+#include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/gpio.h>
 #include <linux/mfd/pm8xxx/core.h>
@@ -26,21 +27,17 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
-/* GPIO registers */
 #define	SSBI_REG_ADDR_GPIO_BASE		0x150
 #define	SSBI_REG_ADDR_GPIO(n)		(SSBI_REG_ADDR_GPIO_BASE + n)
 
-/* GPIO */
 #define	PM_GPIO_BANK_MASK		0x70
 #define	PM_GPIO_BANK_SHIFT		4
 #define	PM_GPIO_WRITE			0x80
 
-/* Bank 0 */
 #define	PM_GPIO_VIN_MASK		0x0E
 #define	PM_GPIO_VIN_SHIFT		1
 #define	PM_GPIO_MODE_ENABLE		0x01
 
-/* Bank 1 */
 #define	PM_GPIO_MODE_MASK		0x0C
 #define	PM_GPIO_MODE_SHIFT		2
 #define	PM_GPIO_OUT_BUFFER		0x02
@@ -51,21 +48,17 @@
 #define	PM_GPIO_MODE_INPUT		0
 #define	PM_GPIO_MODE_BOTH		1
 
-/* Bank 2 */
 #define	PM_GPIO_PULL_MASK		0x0E
 #define	PM_GPIO_PULL_SHIFT		1
 
-/* Bank 3 */
 #define	PM_GPIO_OUT_STRENGTH_MASK	0x0C
 #define	PM_GPIO_OUT_STRENGTH_SHIFT	2
 #define PM_GPIO_PIN_ENABLE		0x00
 #define	PM_GPIO_PIN_DISABLE		0x01
 
-/* Bank 4 */
 #define	PM_GPIO_FUNC_MASK		0x0E
 #define	PM_GPIO_FUNC_SHIFT		1
 
-/* Bank 5 */
 #define	PM_GPIO_NON_INT_POL_INV	0x08
 #define PM_GPIO_BANKS		6
 
@@ -87,9 +80,6 @@ static int pm_gpio_get(struct pm_gpio_chip *pm_gpio_chip, unsigned gpio)
 	if (gpio >= pm_gpio_chip->gpio_chip.ngpio || pm_gpio_chip == NULL)
 		return -EINVAL;
 
-	/* Get gpio value from config bank 1 if output gpio.
-	   Get gpio value from IRQ RT status register for all other gpio modes.
-	 */
 	mode = (pm_gpio_chip->bank1[gpio] & PM_GPIO_MODE_MASK) >>
 		PM_GPIO_MODE_SHIFT;
 	if (mode == PM_GPIO_MODE_OUTPUT)
@@ -381,7 +371,7 @@ int pm8xxx_gpio_config(int gpio, struct pm_gpio *param)
 		return -EINVAL;
 	}
 
-	/* Select banks and configure the gpio */
+	
 	bank[0] = PM_GPIO_WRITE |
 		((param->vin_sel << PM_GPIO_VIN_SHIFT) &
 			PM_GPIO_VIN_MASK) |
@@ -420,7 +410,7 @@ int pm8xxx_gpio_config(int gpio, struct pm_gpio *param)
 		(param->inv_int_pol ? 0 : PM_GPIO_NON_INT_POL_INV);
 
 	spin_lock_irqsave(&pm_gpio_chip->pm_lock, flags);
-	/* Remember bank1 for later use */
+	
 	pm_gpio_chip->bank1[pm_gpio] = bank[1];
 	rc = pm8xxx_write_buf(pm_gpio_chip->gpio_chip.dev->parent,
 			SSBI_REG_ADDR_GPIO(pm_gpio), bank, 6);
@@ -434,6 +424,128 @@ int pm8xxx_gpio_config(int gpio, struct pm_gpio *param)
 }
 EXPORT_SYMBOL(pm8xxx_gpio_config);
 
+int bank_tranceform(char read_buf[256], int len, u8 bank)
+{
+	int index_1, index_2;
+	index_1 = bank / 16;
+	index_2 = bank % 16;
+	switch (index_1) {
+	case 0:
+		switch (index_2) {
+		case 1:  len +=  sprintf(read_buf + len, "[VIN]VPH");
+		break;
+		case 3:  len +=  sprintf(read_buf + len, "[VIN] BB");
+		break;
+		case 5:  len +=  sprintf(read_buf + len, "[VIN] S4");
+		break;
+		case 7:  len +=  sprintf(read_buf + len, "[VIN]L15");
+		break;
+		case 9:  len +=  sprintf(read_buf + len, "[VIN] L4");
+		break;
+		case 11:  len +=  sprintf(read_buf + len, "[VIN] L3");
+		break;
+		case 13:  len +=  sprintf(read_buf + len, "[VIN]L17");
+		break;
+		default:
+		len += sprintf(read_buf + len, "[VIN]NUL");
+	}
+	break;
+	case 1:
+		switch (index_2) {
+		case 0:  len +=  sprintf(read_buf + len, "[DIR]   IN_LOW");
+		break;
+		case 1:  len +=  sprintf(read_buf + len, "[DIR]  IN_HIGH");
+		break;
+		case 4:  len +=  sprintf(read_buf + len, "[DIR] BOTH_LOW");
+		break;
+		case 5:  len +=  sprintf(read_buf + len, "[DIR]BOTH_HIGH");
+		break;
+		case 8:  len +=  sprintf(read_buf + len, "[DIR]  OUT_LOW");
+		break;
+		case 9:  len +=  sprintf(read_buf + len, "[DIR] OUT_HIGH");
+		break;
+		default:
+		len += sprintf(read_buf + len, "[DIR]     NULL");
+	}
+	break;
+	case 2:
+		switch (index_2) {
+		case 0:  len += sprintf(read_buf + len, "[PULL]UP_30    ");
+		break;
+		case 2:  len += sprintf(read_buf + len, "[PULL]UP_1P5   ");
+		break;
+		case 4:  len += sprintf(read_buf + len, "[PULL]UP_31P5  ");
+		break;
+		case 6:  len += sprintf(read_buf + len, "[PULL]UP_1P5_30");
+		break;
+		case 8:  len += sprintf(read_buf + len, "[PULL]DOWN     ");
+		break;
+		case 10:  len += sprintf(read_buf + len, "[PULL]NO       ");
+		break;
+		default:
+		len += sprintf(read_buf + len, "[PULL]NULL     ");
+	}
+	break;
+	case 3:
+		switch (index_2) {
+		case 0:  len += sprintf(read_buf + len, "[STR]  NO");
+		break;
+		case 1:  len += sprintf(read_buf + len, "[STR]  NO");
+		break;
+		case 4:  len += sprintf(read_buf + len, "[STR]HIGH");
+		break;
+		case 5:  len += sprintf(read_buf + len, "[STR]HIGH");
+		break;
+		case 8:  len += sprintf(read_buf + len, "[STR] MED");
+		break;
+		case 9:  len += sprintf(read_buf + len, "[STR] MED");
+		break;
+		case 12:  len += sprintf(read_buf + len, "[STR] LOW");
+		break;
+		case 13:  len += sprintf(read_buf + len, "[STR] LOW");
+		break;
+		default:
+		len += sprintf(read_buf + len, "[STR]NULL");
+	}
+	break;
+	case 4:
+		switch (index_2) {
+		case 0:  len += sprintf(read_buf + len, "[FS]GPIO");
+		break;
+		case 2:  len += sprintf(read_buf + len, "[FS]PAIR");
+		break;
+		case 4:  len += sprintf(read_buf + len, "[FS]ALT1");
+		break;
+		case 6:  len += sprintf(read_buf + len, "[FS]ALT2");
+		break;
+		case 8:  len += sprintf(read_buf + len, "[FS] DT1");
+		break;
+		case 10:  len += sprintf(read_buf + len, "[FS] DT2");
+		break;
+		case 12:  len += sprintf(read_buf + len, "[FS] DT3");
+		break;
+		case 14:  len += sprintf(read_buf + len, "[FS] DT4");
+		break;
+		default:
+		len += sprintf(read_buf + len, "[FS]NULL");
+	}
+	break;
+	case 5:
+		switch (index_2) {
+		case 0:  len += sprintf(read_buf + len, "[INV]    INT_POL");
+		break;
+		case 8:  len += sprintf(read_buf + len, "[INV]NOT_INT_POL");
+		break;
+		default:
+		len += sprintf(read_buf + len, "[INV]       NULL");
+	}
+	break;
+	default:
+	len += sprintf(read_buf + len, "NULL");
+	}
+	return len;
+}
+
 int pm8xxx_dump_gpios(struct seq_file *m, int curr_len, char *gpio_buffer)
 {
 	int i, gpio;
@@ -442,7 +554,7 @@ int pm8xxx_dump_gpios(struct seq_file *m, int curr_len, char *gpio_buffer)
 	u8 bank[PM_GPIO_BANKS];
 	int val = -1;
 	int mode;
-	char read_buf[128];
+	char read_buf[256];
 	char *title_msg = "---------- PM8xxx GPIO ---------";
 	struct pm_gpio_chip *pm_gpio_chip;
 	struct gpio_chip *gpio_chip;
@@ -478,9 +590,14 @@ int pm8xxx_dump_gpios(struct seq_file *m, int curr_len, char *gpio_buffer)
 			}
 			len += sprintf(read_buf + len, "GPIO[%2d]: ", gpio+1);
 
+			len = bank_tranceform(read_buf, len, bank[0]);
+			len += sprintf(read_buf + len, ", ");
+			len = bank_tranceform(read_buf, len, bank[4]);
+			len += sprintf(read_buf + len, ", ");
+
 			val = pm_gpio_get(pm_gpio_chip, gpio);
 
-			/* print the mode and the value */
+			
 			mode = (bank[1] & PM_GPIO_MODE_MASK) >>
 					PM_GPIO_MODE_SHIFT;
 			if (mode == PM_GPIO_MODE_BOTH)
@@ -496,12 +613,11 @@ int pm8xxx_dump_gpios(struct seq_file *m, int curr_len, char *gpio_buffer)
 				len += sprintf(read_buf + len, "[DIR] OFF, [VAL]%s, ",
 				val? "HIGH" : " LOW");
 
-			/* print the control register values */
-			len += sprintf(read_buf + len,
-			"[BANK][0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x]",
-			bank[0], bank[1], bank[2], bank[3], bank[4], bank[5]);
+			len = bank_tranceform(read_buf, len, bank[3]);
+			len += sprintf(read_buf + len, ", ");
+			len = bank_tranceform(read_buf, len, bank[2]);
 
-			read_buf[127] = '\0';
+			read_buf[255] = '\0';
 			if (m) {
 				seq_printf(m, "%s\n", read_buf);
 			} else {

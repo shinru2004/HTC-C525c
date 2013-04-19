@@ -1,10 +1,13 @@
 ccflags-$(CONFIG_USB_DWC3_DEBUG)	:= -DDEBUG
 ccflags-$(CONFIG_USB_DWC3_VERBOSE)	+= -DVERBOSE_DEBUG
+ccflags-y += -Idrivers/usb/host
 
 obj-$(CONFIG_USB_DWC3)			+= dwc3.o
 
 dwc3-y					:= core.o
+dwc3-y					+= host.o
 dwc3-y					+= gadget.o ep0.o
+dwc3-y					+= dwc3_otg.o
 
 ifneq ($(CONFIG_DEBUG_FS),)
 	dwc3-y				+= debugfs.o
@@ -28,6 +31,19 @@ endif
 
 obj-$(CONFIG_USB_DWC3_OMAP)	+= dwc3-omap.o
 obj-$(CONFIG_USB_DWC3_MSM)	+= dwc3-msm.o
+
+##
+# REVISIT Samsung Exynos platform needs the clk API which isn't
+# defined on all architectures. If we allow dwc3-exynos.c compile
+# always we will fail the linking phase on those architectures
+# which don't provide clk api implementation and that's unnaceptable.
+#
+# When Samsung's platform start supporting pm_runtime, this check
+# for HAVE_CLK should be removed.
+##
+ifneq ($(CONFIG_HAVE_CLK),)
+	obj-$(CONFIG_USB_DWC3)		+= dwc3-exynos.o
+endif
 
 ifneq ($(CONFIG_PCI),)
 	obj-$(CONFIG_USB_DWC3)		+= dwc3-pci.o

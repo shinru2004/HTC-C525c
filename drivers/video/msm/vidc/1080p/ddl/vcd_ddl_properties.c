@@ -201,6 +201,7 @@ static u32 ddl_set_dec_property(struct ddl_client_context *ddl,
 			decoder->dynamic_prop_change |=
 				DDL_DEC_REQ_OUTPUT_FLUSH;
 			decoder->dpb_mask.client_mask = 0;
+			decoder->field_needed_for_prev_ip = 0;
 			vcd_status = VCD_S_SUCCESS;
 		}
 	break;
@@ -1046,6 +1047,39 @@ static u32 ddl_set_enc_property(struct ddl_client_context *ddl,
 	case VCD_REQ_PERF_LEVEL:
 		vcd_status = VCD_S_SUCCESS;
 		break;
+    case VCD_I_SET_TURBO_CLK:
+    {
+        vcd_status = VCD_S_SUCCESS;
+        break;
+    }
+	case VCD_I_ENABLE_DELIMITER_FLAG:
+	{
+		struct vcd_property_avc_delimiter_enable *delimiter_enable =
+			(struct vcd_property_avc_delimiter_enable *)
+				property_value;
+		if (sizeof(struct vcd_property_avc_delimiter_enable) ==
+			property_hdr->sz &&
+			encoder->codec.codec == VCD_CODEC_H264) {
+			encoder->avc_delimiter_enable =
+			delimiter_enable->avc_delimiter_enable_flag;
+			vcd_status = VCD_S_SUCCESS;
+		}
+		break;
+	}
+	case VCD_I_ENABLE_VUI_TIMING_INFO:
+	{
+		struct vcd_property_vui_timing_info_enable *vui_timing_enable =
+			(struct vcd_property_vui_timing_info_enable *)
+				property_value;
+		if (sizeof(struct vcd_property_vui_timing_info_enable) ==
+			property_hdr->sz &&
+			encoder->codec.codec == VCD_CODEC_H264) {
+			encoder->vui_timinginfo_enable =
+			vui_timing_enable->vui_timing_info;
+			vcd_status = VCD_S_SUCCESS;
+		}
+		break;
+	}
 	default:
 		DDL_MSG_ERROR("INVALID ID %d\n", (int)property_hdr->prop_id);
 		vcd_status = VCD_ERR_ILLEGAL_OP;
@@ -1529,6 +1563,24 @@ static u32 ddl_get_enc_property(struct ddl_client_context *ddl,
 			vcd_status = VCD_S_SUCCESS;
 		}
 		break;
+	case VCD_I_ENABLE_DELIMITER_FLAG:
+		if (sizeof(struct vcd_property_avc_delimiter_enable) ==
+			property_hdr->sz) {
+			((struct vcd_property_avc_delimiter_enable *)
+				property_value)->avc_delimiter_enable_flag =
+					encoder->avc_delimiter_enable;
+			vcd_status = VCD_S_SUCCESS;
+		}
+		break;
+	case VCD_I_ENABLE_VUI_TIMING_INFO:
+		if (sizeof(struct vcd_property_vui_timing_info_enable) ==
+			property_hdr->sz) {
+			((struct vcd_property_vui_timing_info_enable *)
+				property_value)->vui_timing_info =
+					encoder->vui_timinginfo_enable;
+			vcd_status = VCD_S_SUCCESS;
+		}
+		break;
 	default:
 		vcd_status = VCD_ERR_ILLEGAL_OP;
 		break;
@@ -1690,6 +1742,8 @@ static void ddl_set_default_enc_property(struct ddl_client_context *ddl)
 	encoder->slice_delivery_info.enable = 0;
 	encoder->slice_delivery_info.num_slices = 0;
 	encoder->slice_delivery_info.num_slices_enc = 0;
+	encoder->avc_delimiter_enable = 0;
+	encoder->vui_timinginfo_enable = 0;
 }
 
 static void ddl_set_default_enc_profile(struct ddl_encoder_data *encoder)
@@ -1878,7 +1932,6 @@ u32 ddl_set_default_decoder_buffer_req(struct ddl_decoder_data *decoder,
 		output_buf_req = &decoder->actual_output_buf_req;
 		input_buf_req = &decoder->actual_input_buf_req;
 		min_dpb = decoder->min_dpb_num;
-		y_cb_cr_size = decoder->y_cb_cr_size;
 		if ((decoder->buf_format.buffer_format ==
 			VCD_BUFFER_FORMAT_TILE_4x2) &&
 			(frame_size->height < MDP_MIN_TILE_HEIGHT)) {
@@ -1890,6 +1943,7 @@ u32 ddl_set_default_decoder_buffer_req(struct ddl_decoder_data *decoder,
 				&decoder->buf_format,
 				(!decoder->progressive_only),
 				decoder->hdr.decoding, NULL);
+			decoder->y_cb_cr_size = y_cb_cr_size;
 		} else
 			y_cb_cr_size = decoder->y_cb_cr_size;
 	}
@@ -1992,7 +2046,7 @@ static u32 ddl_valid_buffer_requirement(struct vcd_buffer_requirement
 		req_buf_req->actual_count &&
 		!((original_buf_req->align - (u32)0x1) &
 		req_buf_req->align) &&
-		/*original_buf_req->align <= req_buf_req->align,*/
+		
 		original_buf_req->sz <= req_buf_req->sz)
 		status = true;
 	else {

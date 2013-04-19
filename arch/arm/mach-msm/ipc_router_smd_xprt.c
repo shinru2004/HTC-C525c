@@ -10,11 +10,9 @@
  * GNU General Public License for more details.
  */
 
-/*
- * IPC ROUTER SMD XPRT module.
- */
 #define DEBUG
 
+#include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/types.h>
 
@@ -50,7 +48,7 @@ struct msm_ipc_router_smd_xprt {
 	struct rr_packet *in_pkt;
 	int is_partial_in_pkt;
 	struct delayed_work read_work;
-	spinlock_t ss_reset_lock;	/*Subsystem reset lock*/
+	spinlock_t ss_reset_lock;	
 	int ss_reset;
 	void *pil;
 };
@@ -414,7 +412,7 @@ static void *msm_ipc_load_subsystem(uint32_t edge)
 static int msm_ipc_router_smd_remote_probe(struct platform_device *pdev)
 {
 	int rc;
-	int id;		/*Index into the smd_xprt_cfg table*/
+	int id;		
 
 	id = find_smd_xprt_cfg(pdev);
 	if (id < 0) {

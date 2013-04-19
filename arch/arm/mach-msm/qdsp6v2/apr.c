@@ -36,12 +36,10 @@
 #include <mach/subsystem_notif.h>
 #include <mach/subsystem_restart.h>
 
-//htc audio ++
 #undef pr_info
 #undef pr_err
 #define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
 #define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
-//htc audio --
 
 struct apr_q6 q6;
 struct apr_client client[APR_DEST_MAX][APR_CLIENT_MAX];
@@ -50,7 +48,6 @@ static atomic_t modem_state;
 
 static wait_queue_head_t  dsp_wait;
 static wait_queue_head_t  modem_wait;
-/* Subsystem restart: QDSP6 data, functions */
 static struct workqueue_struct *apr_reset_workqueue;
 static void apr_reset_deregister(struct work_struct *work);
 struct apr_reset_work {
@@ -58,6 +55,19 @@ struct apr_reset_work {
 	struct work_struct work;
 };
 
+#define APR_Q6_CHECK_TIMEOUT 20000
+static struct delayed_work apr_q6_check_work;
+static void apr_q6_check_worker(struct work_struct *work);
+
+static void apr_q6_check_worker(struct work_struct *work)
+{
+	pr_info("%s: %d\n", __func__, q6.state);
+
+	
+	if (q6.state != APR_Q6_LOADED) {
+		BUG();
+	}
+}
 
 int apr_send_pkt(void *handle, uint32_t *buf)
 {
@@ -377,6 +387,12 @@ struct apr_svc *apr_register(char *dest, char *svc_name, apr_fn svc_fn,
 				svc_name, client_id, dest_id);
 	mutex_lock(&q6.lock);
 	if (q6.state == APR_Q6_NOIMG) {
+
+		pr_info("%s: Load Q6 image\n", __func__);
+		cancel_delayed_work_sync(&apr_q6_check_work);
+		queue_delayed_work(apr_reset_workqueue, &apr_q6_check_work,
+							msecs_to_jiffies(APR_Q6_CHECK_TIMEOUT));
+
 		q6.pil = pil_get("q6");
 		if (IS_ERR(q6.pil)) {
 			rc = PTR_ERR(q6.pil);
@@ -540,7 +556,6 @@ int adsp_state(int state)
 	return 0;
 }
 
-/* Dispatch the Reset events to Modem and audio clients */
 void dispatch_event(unsigned long code, unsigned short proc)
 {
 	struct apr_client *apr_client;
@@ -677,6 +692,9 @@ static int __init apr_init(void)
 		create_singlethread_workqueue("apr_driver");
 	if (!apr_reset_workqueue)
 		return -ENOMEM;
+
+	INIT_DELAYED_WORK(&apr_q6_check_work, apr_q6_check_worker);
+
 	return 0;
 }
 device_initcall(apr_init);

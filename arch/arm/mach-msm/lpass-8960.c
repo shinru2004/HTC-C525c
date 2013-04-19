@@ -33,9 +33,7 @@
 #define MODULE_NAME			"lpass_8960"
 #define MAX_BUF_SIZE			0x51
 
-/* Subsystem restart: QDSP6 data, functions */
 static void lpass_fatal_fn(struct work_struct *);
-static void send_q6_nmi(void);
 static DECLARE_WORK(lpass_fatal_work, lpass_fatal_fn);
 struct lpass_ssr {
 	void *lpass_ramdump_dev;
@@ -126,16 +124,15 @@ static void lpass_fatal_fn(struct work_struct *work)
 	pr_err("%s %s: Watchdog bite received from Q6!\n", MODULE_NAME,
 		__func__);
 	lpass_log_failure_reason();
-	send_q6_nmi();
 	ssr_set_restart_reason(
-		"lpass fatal: Watchdog bite received from Q6!");
+			"lpass fatal: Watchdog bite received from Q6!");
 	panic(MODULE_NAME ": Resetting the SoC");
 }
 
 static void lpass_smsm_state_cb(void *data, uint32_t old_state,
 				uint32_t new_state)
 {
-	/* Ignore if we're the one that set SMSM_RESET */
+	
 	if (q6_crash_shutdown)
 		return;
 
@@ -143,23 +140,22 @@ static void lpass_smsm_state_cb(void *data, uint32_t old_state,
 		pr_err("%s: LPASS SMSM state changed to SMSM_RESET,"
 			" new_state = 0x%x, old_state = 0x%x\n", __func__,
 			new_state, old_state);
-		lpass_log_failure_reason();
-		send_q6_nmi();
 		ssr_set_restart_reason(
-			"lpass fatal: SMSM state changed to SMSM_RESET!");
+				"lpass fatal: SMSM state changed to SMSM_RESET!");
+		lpass_log_failure_reason();
 		panic(MODULE_NAME ": Resetting the SoC");
 	}
 }
 
 static void send_q6_nmi(void)
 {
-	/* Send NMI to QDSP6 via an SCM call. */
+	
 	uint32_t cmd = 0x1;
 
 	scm_call(SCM_SVC_UTIL, SCM_Q6_NMI_CMD,
 	&cmd, sizeof(cmd), NULL, 0);
 
-	/* Q6 requires worstcase 100ms to dump caches etc.*/
+	
 	mdelay(100);
 	pr_debug("%s: Q6 NMI was sent.\n", __func__);
 }
@@ -179,7 +175,6 @@ static int lpass_powerup(const struct subsys_data *subsys)
 	enable_irq(LPASS_Q6SS_WDOG_EXPIRED);
 	return ret;
 }
-/* RAM segments - address and size for 8960 */
 static struct ramdump_segment q6_segments[] = { {0x8da00000, 0x8f200000 -
 					0x8da00000}, {0x28400000, 0x20000} };
 static int lpass_ramdump(int enable, const struct subsys_data *subsys)
@@ -236,7 +231,7 @@ static int enable_lpass_ssr_set(const char *val, struct kernel_param *kp)
 }
 
 module_param_call(enable_lpass_ssr, enable_lpass_ssr_set, param_get_int,
-			&enable_lpass_ssr, S_IRUGO | S_IWUSR);
+		&enable_lpass_ssr, S_IRUGO | S_IWUSR);
 
 static int __init lpass_restart_init(void)
 {

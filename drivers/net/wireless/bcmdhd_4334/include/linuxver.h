@@ -28,6 +28,8 @@
 #ifndef _linuxver_h_
 #define _linuxver_h_
 
+#include <linux/kthread.h>
+
 #include <linux/version.h>
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0))
 #include <linux/config.h>
@@ -96,6 +98,18 @@
 #define flush_scheduled_work() flush_scheduled_tasks()
 #endif
 #endif	
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0))
+#define DAEMONIZE(a) daemonize(a); \
+	allow_signal(SIGKILL); \
+	allow_signal(SIGTERM);
+#else 
+#define RAISE_RX_SOFTIRQ() \
+	cpu_raise_softirq(smp_processor_id(), NET_RX_SOFTIRQ)
+#define DAEMONIZE(a) daemonize(); \
+	do { if (a) \
+		strncpy(current->comm, a, MIN(sizeof(current->comm), (strlen(a)))); \
+	} while (0);
+#endif 
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 19)
 #define	MY_INIT_WORK(_work, _func)	INIT_WORK(_work, _func)
@@ -494,6 +508,17 @@ typedef struct {
 #endif
 
 
+#define PROC_START2(thread_func, owner, tsk_ctl, flags, name) \
+{ \
+	sema_init(&((tsk_ctl)->sema), 0); \
+	init_completion(&((tsk_ctl)->completed)); \
+	(tsk_ctl)->parent = owner; \
+	(tsk_ctl)->terminated = FALSE; \
+	(tsk_ctl)->p_task  = kthread_run(thread_func, tsk_ctl, (char*)name); \
+	(tsk_ctl)->thr_pid = (tsk_ctl)->p_task->pid; \
+	DBG_THR(("%s thr:%lx created\n", __FUNCTION__, (tsk_ctl)->thr_pid)); \
+}
+
 #define PROC_START(thread_func, owner, tsk_ctl, flags) \
 { \
 	sema_init(&((tsk_ctl)->sema), 0); \
@@ -501,8 +526,9 @@ typedef struct {
 	(tsk_ctl)->parent = owner; \
 	(tsk_ctl)->terminated = FALSE; \
 	(tsk_ctl)->thr_pid = kernel_thread(thread_func, tsk_ctl, flags); \
+	DBG_THR(("%s thr:%lx created\n", __FUNCTION__, (tsk_ctl)->thr_pid)); \
 	if ((tsk_ctl)->thr_pid > 0) \
-		wait_for_completion_timeout(&((tsk_ctl)->completed), 2*HZ); \
+		wait_for_completion(&((tsk_ctl)->completed)); \
 	DBG_THR(("%s thr:%lx started\n", __FUNCTION__, (tsk_ctl)->thr_pid)); \
 }
 
@@ -560,12 +586,9 @@ do {									\
 		set_current_state(TASK_INTERRUPTIBLE);			\
 		if (condition)						\
 			break;						\
-		if (!signal_pending(current)) {				\
-			ret = schedule_timeout(ret);			\
-			if (!ret)					\
-				break;					\
-			continue;					\
-		}							\
+		ret = schedule_timeout(ret);			\
+		if (!ret)					\
+			break;					\
 		ret = -ERESTARTSYS;					\
 		break;							\
 	}								\

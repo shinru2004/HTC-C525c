@@ -19,9 +19,9 @@
 #include <asm/cacheflush.h>
 #include <asm/cputype.h>
 #include <asm/mach-types.h>
+#include <asm/smp_plat.h>
 
 #include <mach/socinfo.h>
-#include <mach/smp.h>
 #include <mach/hardware.h>
 #include <mach/msm_iomap.h>
 
@@ -29,50 +29,37 @@
 #include "scm-boot.h"
 #include "spm.h"
 
-int pen_release = -1;
+#define VDD_SC1_ARRAY_CLAMP_GFS_CTL 0x15A0
+#define SCSS_CPU1CORE_RESET 0xD80
+#define SCSS_DBG_STATUS_CORE_PWRDUP 0xE64
 
-/*
-PHY define in msm_iomap-8930.h, VIRT define in msm_iomap.h
-The counters to check kernel exit for both cpu's
-kernel foot print for cpu0  		: phy 0x8F9F1000 : virt 0xFA705000
-kernel foot print for cpu1  		: phy 0x8F9F1004 : virt 0xFA705004
-kernel exit counter from cpu0		: phy 0x8F9F1008 : virt 0xFA705008
-kernel exit counter from cpu1		: phy 0x8F9F100C : virt 0xFA70500C
-msm_pm_boot_entry			: phy 0x8F9F1010 : virt 0xFA705010
-msm_pm_boot_vector			: phy 0x8F9F1014 : virt 0xFA705014
-reset vector for cpu0(init)		: phy 0x8F9F1018 : virt 0xFA705018
-reset vector for cpu1(init)		: phy 0x8F9F101C : virt 0xFA70501C
-cpu0 reset vector address		: phy 0x8F9F1020 : virt 0xFA705020
-cpu1 reset vector address		: phy 0x8F9F1024 : virt 0xFA705024
-cpu0 reset vector address value		: phy 0x8F9F1028 : virt 0xFA705028
-cpu1 reset vector address value		: phy 0x8F9F102C : virt 0xFA70502C
-cpu0 frequency				: phy 0x8F9F1030 : virt 0xFA705030
-cpu1 frequency				: phy 0x8F9F1034 : virt 0xFA705034
-L2 frequency				: phy 0x8F9F1038 : virt 0xFA705038
-acpuclk_set_rate footprint cpu0		: phy 0x8F9F103C : virt 0xFA70503C
-acpuclk_set_rate footprint cpu1		: phy 0x8F9F1040 : virt 0xFA705040
-*/
-#define CPU0_EXIT_KERNEL_COUNTER_BASE			(MSM_KERNEL_FOOTPRINT_BASE + 0x8)
-#define CPU1_EXIT_KERNEL_COUNTER_BASE			(MSM_KERNEL_FOOTPRINT_BASE + 0xC)
+extern void msm_secondary_startup(void);
+
+#define CPU0_EXIT_KERNEL_COUNTER_BASE			(MSM_KERNEL_FOOTPRINT_BASE + 0x10)
+#define CPU1_EXIT_KERNEL_COUNTER_BASE			(MSM_KERNEL_FOOTPRINT_BASE + 0x14)
+#define CPU2_EXIT_KERNEL_COUNTER_BASE			(MSM_KERNEL_FOOTPRINT_BASE + 0x18)
+#define CPU3_EXIT_KERNEL_COUNTER_BASE			(MSM_KERNEL_FOOTPRINT_BASE + 0x1C)
 static void init_cpu_debug_counter_for_cold_boot(void)
 {
 	*(unsigned *)CPU0_EXIT_KERNEL_COUNTER_BASE = 0x0;
 	*(unsigned *)CPU1_EXIT_KERNEL_COUNTER_BASE = 0x0;
+	*(unsigned *)CPU2_EXIT_KERNEL_COUNTER_BASE = 0x0;
+	*(unsigned *)CPU3_EXIT_KERNEL_COUNTER_BASE = 0x0;
 	mb();
 }
 
-void __init platform_smp_prepare_cpus(unsigned int max_cpus)
+volatile int pen_release = -1;
+
+static DEFINE_SPINLOCK(boot_lock);
+
+void __cpuinit platform_secondary_init(unsigned int cpu)
 {
-}
+	WARN_ON(msm_platform_secondary_init(cpu));
 
-void __init smp_init_cpus(void)
-{
-	unsigned int i, ncores = get_core_count();
+	gic_secondary_init(0);
 
-	for (i = 0; i < ncores; i++)
-		cpu_set(i, cpu_possible_map);
-
-	set_smp_cross_call(gic_raise_softirq);
+	spin_lock(&boot_lock);
+	spin_unlock(&boot_lock);
 }
 
 static int __cpuinit scorpion_release_secondary(void)
@@ -81,10 +68,10 @@ static int __cpuinit scorpion_release_secondary(void)
 	if (!base_ptr)
 		return -EINVAL;
 
-	writel_relaxed(0x0, base_ptr+0x15A0);
+	writel_relaxed(0, base_ptr + VDD_SC1_ARRAY_CLAMP_GFS_CTL);
 	dmb();
-	writel_relaxed(0x0, base_ptr+0xD80);
-	writel_relaxed(0x3, base_ptr+0xE64);
+	writel_relaxed(0, base_ptr + SCSS_CPU1CORE_RESET);
+	writel_relaxed(3, base_ptr + SCSS_DBG_STATUS_CORE_PWRDUP);
 	mb();
 	iounmap(base_ptr);
 
@@ -105,7 +92,7 @@ static int __cpuinit krait_release_secondary_sim(unsigned long base, int cpu)
 	if (machine_is_apq8064_sim())
 		writel_relaxed(0xf0000, base_ptr+0x04);
 
-	if (machine_is_copper_sim()) {
+	if (machine_is_msm8974_sim()) {
 		writel_relaxed(0x800, base_ptr+0x04);
 		writel_relaxed(0x3FFF, base_ptr+0x14);
 	}
@@ -153,11 +140,11 @@ static int __cpuinit release_secondary(unsigned int cpu)
 	    machine_is_apq8064_sim())
 		return krait_release_secondary_sim(0x02088000, cpu);
 
-	if (machine_is_copper_sim())
+	if (machine_is_msm8974_sim())
 		return krait_release_secondary_sim(0xf9088000, cpu);
 
 	if (cpu_is_msm8960() || cpu_is_msm8930() || cpu_is_msm8930aa() ||
-	    cpu_is_apq8064() || cpu_is_msm8627())
+	    cpu_is_apq8064() || cpu_is_msm8627() || cpu_is_apq8064ab())
 		return krait_release_secondary(0x02088000, cpu);
 
 	WARN(1, "unknown CPU case in release_secondary\n");
@@ -172,19 +159,15 @@ static int cold_boot_flags[] = {
 	SCM_FLAG_COLDBOOT_CPU3,
 };
 
-/* Executed by primary CPU, brings other CPUs out of reset. Called at boot
-   as well as when a CPU is coming out of shutdown induced by echo 0 >
-   /sys/devices/.../cpuX.
-*/
 int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
-	int cnt = 0;
 	int ret;
 	int flag = 0;
+	unsigned long timeout;
 
 	pr_debug("Starting secondary CPU %d\n", cpu);
 
-	/* Set preset_lpj to avoid subsequent lpj recalculations */
+	
 	preset_lpj = loops_per_jiffy;
 
 	if (cpu > 0 && cpu < ARRAY_SIZE(cold_boot_flags))
@@ -205,36 +188,45 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 		init_cpu_debug_counter_for_cold_boot();
 	}
 
-	pen_release = cpu;
-	dmac_flush_range((void *)&pen_release,
-			 (void *)(&pen_release + sizeof(pen_release)));
+	spin_lock(&boot_lock);
 
-	/* Use smp_cross_call() to send a soft interrupt to wake up
-	 * the other core.
-	 */
+	pen_release = cpu_logical_map(cpu);
+	__cpuc_flush_dcache_area((void *)&pen_release, sizeof(pen_release));
+	outer_clean_range(__pa(&pen_release), __pa(&pen_release + 1));
+
 	gic_raise_softirq(cpumask_of(cpu), 1);
 
-	while (pen_release != 0xFFFFFFFF) {
+	timeout = jiffies + (1 * HZ);
+	while (time_before(jiffies, timeout)) {
+		smp_rmb();
+		if (pen_release == -1)
+			break;
+
 		dmac_inv_range((void *)&pen_release,
 			       (void *)(&pen_release+sizeof(pen_release)));
-		usleep(500);
-		if (cnt++ >= 10)
-			break;
+		udelay(10);
 	}
 
-	return 0;
+	spin_unlock(&boot_lock);
+
+	return pen_release != -1 ? -ENOSYS : 0;
+}
+void __init smp_init_cpus(void)
+{
+	unsigned int i, ncores = get_core_count();
+
+	if (ncores > nr_cpu_ids) {
+		pr_warn("SMP: %u cores greater than maximum (%u), clipping\n",
+			ncores, nr_cpu_ids);
+		ncores = nr_cpu_ids;
+	}
+
+	for (i = 0; i < ncores; i++)
+		set_cpu_possible(i, true);
+
+	set_smp_cross_call(gic_raise_softirq);
 }
 
-/* Initialization routine for secondary CPUs after they are brought out of
- * reset.
-*/
-void __cpuinit platform_secondary_init(unsigned int cpu)
+void __init platform_smp_prepare_cpus(unsigned int max_cpus)
 {
-	pr_debug("CPU%u: Booted secondary processor\n", cpu);
-
-	WARN_ON(msm_platform_secondary_init(cpu));
-
-	trace_hardirqs_off();
-
-	gic_secondary_init(0);
 }

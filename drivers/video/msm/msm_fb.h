@@ -33,7 +33,6 @@
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
 #include <linux/hrtimer.h>
-#include <linux/wakelock.h>
 
 #include <linux/fb.h>
 #include <linux/list.h>
@@ -43,9 +42,6 @@
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
-
-/*  Idle wakelock to prevent PC between wake up and Vsync */
-extern struct wake_lock mdp_idle_wakelock;
 
 #include "msm_fb_panel.h"
 #include "mdp.h"
@@ -58,6 +54,7 @@ struct disp_info_type_suspend {
 	boolean op_enable;
 	boolean sw_refreshing_enable;
 	boolean panel_power_on;
+	boolean op_suspend;
 };
 
 struct msmfb_writeback_data_list {
@@ -80,9 +77,7 @@ struct msm_fb_data_type {
 
 	panel_id_type panel;
 	struct msm_panel_info panel_info;
-///HTC:
 	int init_mipi_lcd;
-///:HTC
 
 	DISP_TARGET dest;
 	struct fb_info *fbi;
@@ -104,7 +99,7 @@ struct msm_fb_data_type {
 	boolean pan_waiting;
 	struct completion pan_comp;
 
-	/* vsync */
+	
 	boolean use_mdp_vsync;
 	__u32 vsync_gpio;
 	__u32 total_lcd_lines;
@@ -156,12 +151,12 @@ struct msm_fb_data_type {
 	__u32 var_xres;
 	__u32 var_yres;
 	__u32 var_pixclock;
-	__u32 var_frame_rate;
-
-#if 1 /* HTC_CSP_START */
+#if 1 
 	uint32_t width;
 	uint32_t height;
-#endif
+	int perfhint;
+#endif 
+	__u32 var_frame_rate;
 
 #ifdef MSM_FB_ENABLE_DBGFS
 	struct dentry *sub_dir;
@@ -169,6 +164,9 @@ struct msm_fb_data_type {
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
+#ifdef CONFIG_HTC_ONMODE_CHARGING
+	struct early_suspend onchg_suspend;
+#endif
 #ifdef CONFIG_FB_MSM_MDDI
 	struct early_suspend mddi_early_suspend;
 	struct early_suspend mddi_ext_early_suspend;
@@ -195,15 +193,16 @@ struct msm_fb_data_type {
 	u32 ov_start;
 	u32 mem_hid;
 	u32 mdp_rev;
-	u32 use_ov0_blt, ov0_blt_state;
-	u32 use_ov1_blt, ov1_blt_state;
 	u32 writeback_state;
 	bool writeback_active_cnt;
 	int cont_splash_done;
-	/* For CABC dimming */
+	
 	struct workqueue_struct *dimming_wq;
 	struct work_struct dimming_work;
 	struct timer_list dimming_update_timer;
+	struct workqueue_struct *sre_wq;
+   struct work_struct sre_work;
+   struct timer_list sre_update_timer;
 };
 
 struct dentry *msm_fb_get_debugfs_root(void);
@@ -223,7 +222,7 @@ int msm_fb_writeback_stop(struct fb_info *info);
 int msm_fb_writeback_terminate(struct fb_info *info);
 int msm_fb_detect_client(const char *name);
 int calc_fb_offset(struct msm_fb_data_type *mfd, struct fb_info *fbi, int bpp);
-void msm_fb_display_on(struct msm_fb_data_type *mfd);
+void mdp_color_enhancement(const struct mdp_reg *reg_seq, int size);
 
 #ifdef CONFIG_FB_BACKLIGHT
 void msm_fb_config_backlight(struct msm_fb_data_type *mfd);
@@ -238,6 +237,11 @@ int msm_fb_check_frame_rate(struct msm_fb_data_type *mfd,
 #define INIT_IMAGE_FILE "/initlogo.rle"
 int load_565rle_image(char *filename, bool bf_supported);
 #endif
+enum {
+	MSM_FB_PERFORMANCE_NONE,
+	MSM_FB_PERFORMANCE_NORMAL,
+	MSM_FB_PERFORMANCE_MORE,
+};
 
-#define DEFAULT_BRIGHTNESS 83
-#endif /* MSM_FB_H */
+#define DEFAULT_BRIGHTNESS 143
+#endif 

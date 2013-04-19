@@ -10,6 +10,8 @@
  * GNU General Public License for more details.
  *
  */
+
+#include <linux/export.h>
 #include <linux/err.h>
 #include <linux/ion.h>
 #include <linux/platform_device.h>
@@ -19,6 +21,7 @@
 #include <mach/ion.h>
 #include <mach/msm_memtypes.h>
 #include "../ion_priv.h"
+#include "ion_cp_common.h"
 
 static struct ion_device *idev;
 static int num_heaps;
@@ -33,15 +36,27 @@ EXPORT_SYMBOL(msm_ion_client_create);
 
 int msm_ion_secure_heap(int heap_id)
 {
-	return ion_secure_heap(idev, heap_id);
+	return ion_secure_heap(idev, heap_id, ION_CP_V1, NULL);
 }
 EXPORT_SYMBOL(msm_ion_secure_heap);
 
 int msm_ion_unsecure_heap(int heap_id)
 {
-	return ion_unsecure_heap(idev, heap_id);
+	return ion_unsecure_heap(idev, heap_id, ION_CP_V1, NULL);
 }
 EXPORT_SYMBOL(msm_ion_unsecure_heap);
+
+int msm_ion_secure_heap_2_0(int heap_id, enum cp_mem_usage usage)
+{
+	return ion_secure_heap(idev, heap_id, ION_CP_V2, (void *)usage);
+}
+EXPORT_SYMBOL(msm_ion_secure_heap_2_0);
+
+int msm_ion_unsecure_heap_2_0(int heap_id, enum cp_mem_usage usage)
+{
+	return ion_unsecure_heap(idev, heap_id, ION_CP_V2, (void *)usage);
+}
+EXPORT_SYMBOL(msm_ion_unsecure_heap_2_0);
 
 int msm_ion_do_cache_op(struct ion_client *client, struct ion_handle *handle,
 			void *vaddr, unsigned long len, unsigned int cmd)
@@ -136,9 +151,11 @@ static void allocate_co_memory(struct ion_platform_heap *heap,
 				}
 
 				cp_data->virt_addr = fmem_info->virt;
-				cp_data->secure_base = heap->base;
-				cp_data->secure_size =
+				if (!cp_data->secure_base) {
+					cp_data->secure_base = heap->base;
+					cp_data->secure_size =
 						heap->size + shared_heap->size;
+				}
 			} else if (!heap->base) {
 				ion_set_base_address(heap, shared_heap,
 					co_heap_data, cp_data);
@@ -147,15 +164,6 @@ static void allocate_co_memory(struct ion_platform_heap *heap,
 	}
 }
 
-/* Fixup heaps in board file to support two heaps being adjacent to each other.
- * A flag (adjacent_mem_id) in the platform data tells us that the heap phy
- * memory location must be adjacent to the specified heap. We do this by
- * carving out memory for both heaps and then splitting up the memory to the
- * two heaps. The heap specifying the "adjacent_mem_id" get the base of the
- * memory while heap specified in "adjacent_mem_id" get base+size as its
- * base address.
- * Note: Modifies platform data and allocates memory.
- */
 static void msm_ion_heap_fixup(struct ion_platform_heap heap_data[],
 			       unsigned int nr_heaps)
 {
@@ -275,7 +283,7 @@ static int msm_ion_probe(struct platform_device *pdev)
 
 	msm_ion_heap_fixup(pdata->heaps, num_heaps);
 
-	/* create the heaps as specified in the board file */
+	
 	for (i = 0; i < num_heaps; i++) {
 		struct ion_platform_heap *heap_data = &pdata->heaps[i];
 		msm_ion_allocate(heap_data);

@@ -170,7 +170,7 @@ config CPU_FREQ_GOV_ONDEMAND_2_PHASE
 	tristate "'2-phase' power-efficiency ondemand algorithm"
 	depends on CPU_FREQ_GOV_ONDEMAND
 	help
-	 '2-phase' - This driver adds a new algo to save power
+	  '2-phase' - This driver adds a new algo to save power
 
 config CPU_FREQ_GOV_INTERACTIVE
 	tristate "'interactive' cpufreq policy governor"
@@ -215,6 +215,16 @@ config CPU_FREQ_GOV_CONSERVATIVE
 menu "x86 CPU frequency scaling drivers"
 depends on X86
 source "drivers/cpufreq/Kconfig.x86"
+endmenu
+
+menu "ARM CPU frequency scaling drivers"
+depends on ARM
+source "drivers/cpufreq/Kconfig.arm"
+endmenu
+
+menu "PowerPC CPU frequency scaling drivers"
+depends on PPC32 || PPC64
+source "drivers/cpufreq/Kconfig.powerpc"
 endmenu
 
 endif

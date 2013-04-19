@@ -15,7 +15,7 @@
 
 #define MSM8930_PHASE_2
 
-#include <linux/regulator/gpio-regulator.h>
+#include <linux/regulator/msm-gpio-regulator.h>
 #include <linux/mfd/pm8xxx/pm8038.h>
 #include <linux/i2c.h>
 #include <linux/i2c/sx150x.h>
@@ -24,10 +24,15 @@
 #include <mach/msm_memtypes.h>
 #include <mach/msm_rtb.h>
 
-/*
- * TODO: When physical 8930/PM8038 hardware becomes
- * available, remove this block.
- */
+#define EVM	0x99
+#define EVM1	99
+#define XA	0
+#define XB	1
+#define XC	2
+#define XD	3
+#define XE	4
+#define PVT	0x80
+
 #ifndef MSM8930_PHASE_2
 #include <linux/mfd/pm8xxx/pm8921.h>
 #define PM8921_GPIO_BASE		NR_GPIO_IRQS
@@ -36,18 +41,12 @@
 #define PM8921_MPP_PM_TO_SYS(pm_gpio)	(pm_gpio - 1 + PM8921_MPP_BASE)
 #endif
 
-/* Macros assume PMIC GPIOs and MPPs start at 1 */
 #define PM8038_GPIO_BASE		NR_GPIO_IRQS
 #define PM8038_GPIO_PM_TO_SYS(pm_gpio)	(pm_gpio - 1 + PM8038_GPIO_BASE)
 #define PM8038_MPP_BASE			(PM8038_GPIO_BASE + PM8038_NR_GPIOS)
 #define PM8038_MPP_PM_TO_SYS(pm_gpio)	(pm_gpio - 1 + PM8038_MPP_BASE)
 #define PM8038_IRQ_BASE			(NR_MSM_IRQS + NR_GPIO_IRQS)
 
-/*
- * TODO: When physical 8930/PM8038 hardware becomes
- * available, replace this block with 8930/pm8038 regulator
- * declarations.
- */
 #ifndef MSM8930_PHASE_2
 extern struct pm8xxx_regulator_platform_data
 	msm_pm8921_regulator_pdata[] __devinitdata;
@@ -85,7 +84,7 @@ extern struct rpm_regulator_platform_data
 enum {
 	GPIO_EXPANDER_IRQ_BASE = (PM8038_IRQ_BASE + PM8038_NR_IRQS),
 	GPIO_EXPANDER_GPIO_BASE = (PM8038_MPP_BASE + PM8038_NR_MPPS),
-	/* CAM Expander */
+	
 	GPIO_CAM_EXPANDER_BASE = GPIO_EXPANDER_GPIO_BASE,
 	GPIO_CAM_GP_STROBE_READY = GPIO_CAM_EXPANDER_BASE,
 	GPIO_CAM_GP_AFBUSY,
@@ -112,11 +111,6 @@ void msm8930_init_fb(void);
 void msm8930_init_pmic(void);
 extern void msm8930_add_vidc_device(void);
 
-/*
- * TODO: When physical 8930/PM8038 hardware becomes
- * available, remove this block or add the config
- * option.
- */
 #ifndef MSM8930_PHASE_2
 void msm8960_init_pmic(void);
 void msm8960_pm8921_gpio_mpp_init(void);
@@ -132,8 +126,8 @@ struct msm_mmc_pad_drv_data *mmc_get_pdd_drv_data(int controller);
 
 #define PLATFORM_IS_CHARM25() \
 	(machine_is_msm8930_cdp() && \
-		(socinfo_get_platform_subtype() == 1))
-
+		(socinfo_get_platform_subtype() == 1) \
+	)
 
 #define MSM_8930_GSBI2_QUP_I2C_BUS_ID 2
 #define MSM_8930_GSBI3_QUP_I2C_BUS_ID 3
@@ -143,3 +137,4 @@ struct msm_mmc_pad_drv_data *mmc_get_pdd_drv_data(int controller);
 #define MSM_8930_GSBI12_QUP_I2C_BUS_ID 12
 
 extern struct msm_rtb_platform_data msm8930_rtb_pdata;
+extern struct msm_cache_dump_platform_data msm8930_cache_dump_pdata;

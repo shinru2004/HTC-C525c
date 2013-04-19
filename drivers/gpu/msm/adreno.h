@@ -24,13 +24,10 @@
 #define ADRENO_DEVICE(device) \
 		KGSL_CONTAINER_OF(device, struct adreno_device, dev)
 
-/* Flags to control command packet settings */
 #define KGSL_CMD_FLAGS_NONE             0x00000000
 #define KGSL_CMD_FLAGS_PMODE		0x00000001
 #define KGSL_CMD_FLAGS_NO_TS_CMP	0x00000002
-#define KGSL_CMD_FLAGS_NOT_KERNEL_CMD	0x00000004
 
-/* Command identifiers */
 #define KGSL_CONTEXT_TO_MEM_IDENTIFIER	0x2EADBEEF
 #define KGSL_CMD_IDENTIFIER		0x2EEDFACE
 #define KGSL_START_OF_IB_IDENTIFIER	0x2EADEABE
@@ -44,13 +41,10 @@
 #define ADRENO_DEFAULT_PWRSCALE_POLICY  NULL
 #endif
 
-#define ADRENO_ISTORE_START 0x5000 /* Istore offset */
+#define ADRENO_ISTORE_START 0x5000 
 
 #define ADRENO_NUM_CTX_SWITCH_ALLOWED_BEFORE_DRAW	50
 
-/* One cannot wait forever for the core to idle, so set an upper limit to the
- * amount of time to wait for the core to go idle
- */
 
 #define ADRENO_IDLE_TIMEOUT (80 * 1000)
 
@@ -68,7 +62,7 @@ enum adreno_gpurev {
 struct adreno_gpudev;
 
 struct adreno_device {
-	struct kgsl_device dev;    /* Must be first field in this struct */
+	struct kgsl_device dev;    
 	unsigned int chip_id;
 	enum adreno_gpurev gpurev;
 	unsigned long gmem_base;
@@ -77,9 +71,11 @@ struct adreno_device {
 	const char *pfp_fwfile;
 	unsigned int *pfp_fw;
 	size_t pfp_fw_size;
+	unsigned int pfp_fw_version;
 	const char *pm4_fwfile;
 	unsigned int *pm4_fw;
 	size_t pm4_fw_size;
+	unsigned int pm4_fw_version;
 	struct adreno_ringbuffer ringbuffer;
 	unsigned int mharb;
 	struct adreno_gpudev *gpudev;
@@ -89,20 +85,17 @@ struct adreno_device {
 	unsigned int instruction_size;
 	unsigned int ib_check_level;
 	unsigned int fast_hang_detect;
+	unsigned int gpulist_index;
 };
 
 struct adreno_gpudev {
-	/*
-	 * These registers are in a different location on A3XX,  so define
-	 * them in the structure and use them as variables.
-	 */
 	unsigned int reg_rbbm_status;
 	unsigned int reg_cp_pfp_ucode_data;
 	unsigned int reg_cp_pfp_ucode_addr;
-	/* keeps track of when we need to execute the draw workaround code */
+	
 	int ctx_switches_since_last_draw;
 
-	/* GPU specific function hooks */
+	
 	int (*ctxt_create)(struct adreno_device *, struct adreno_context *);
 	void (*ctxt_save)(struct adreno_device *, struct adreno_context *);
 	void (*ctxt_restore)(struct adreno_device *, struct adreno_context *);
@@ -116,10 +109,20 @@ struct adreno_gpudev {
 	unsigned int (*busy_cycles)(struct adreno_device *);
 };
 
+struct adreno_recovery_data {
+	unsigned int ib1;
+	unsigned int context_id;
+	unsigned int global_eop;
+	unsigned int *rb_buffer;
+	unsigned int rb_size;
+	unsigned int *bad_rb_buffer;
+	unsigned int bad_rb_size;
+	unsigned int last_valid_ctx_id;
+};
+
 extern struct adreno_gpudev adreno_a2xx_gpudev;
 extern struct adreno_gpudev adreno_a3xx_gpudev;
 
-/* A2XX register sets defined in adreno_a2xx.c */
 extern const unsigned int a200_registers[];
 extern const unsigned int a220_registers[];
 extern const unsigned int a225_registers[];
@@ -127,9 +130,11 @@ extern const unsigned int a200_registers_count;
 extern const unsigned int a220_registers_count;
 extern const unsigned int a225_registers_count;
 
-/* A3XX register set defined in adreno_a3xx.c */
 extern const unsigned int a3xx_registers[];
 extern const unsigned int a3xx_registers_count;
+
+extern const unsigned int a3xx_hlsq_registers[];
+extern const unsigned int a3xx_hlsq_registers_count;
 
 extern unsigned int hang_detect_regs[];
 extern const unsigned int hang_detect_regs_count;
@@ -222,22 +227,9 @@ static inline int adreno_rb_ctxtswitch(unsigned int *cmd)
 		cmd[1] == KGSL_CONTEXT_TO_MEM_IDENTIFIER);
 }
 
-/**
- * adreno_encode_istore_size - encode istore size in CP format
- * @adreno_dev - The 3D device.
- *
- * Encode the istore size into the format expected that the
- * CP_SET_SHADER_BASES and CP_ME_INIT commands:
- * bits 31:29 - istore size as encoded by this function
- * bits 27:16 - vertex shader start offset in instructions
- * bits 11:0 - pixel shader start offset in instructions.
- */
 static inline int adreno_encode_istore_size(struct adreno_device *adreno_dev)
 {
 	unsigned int size;
-	/* in a225 the CP microcode multiplies the encoded
-	 * value by 3 while decoding.
-	 */
 	if (adreno_is_a225(adreno_dev))
 		size = adreno_dev->istore_size/3;
 	else
@@ -249,10 +241,6 @@ static inline int adreno_encode_istore_size(struct adreno_device *adreno_dev)
 static inline int __adreno_add_idle_indirect_cmds(unsigned int *cmds,
 						unsigned int nop_gpuaddr)
 {
-	/* Adding an indirect buffer ensures that the prefetch stalls until
-	 * the commands in indirect buffer have completed. We need to stall
-	 * prefetch with a nop indirect buffer when updating pagetables
-	 * because it provides stabler synchronization */
 	*cmds++ = CP_HDR_INDIRECT_BUFFER_PFD;
 	*cmds++ = nop_gpuaddr;
 	*cmds++ = 2;
@@ -287,14 +275,6 @@ static inline int adreno_add_bank_change_cmds(unsigned int *cmds,
 	return cmds - start;
 }
 
-/*
- * adreno_read_cmds - Add pm4 packets to perform read
- * @device - Pointer to device structure
- * @cmds - Pointer to memory where read commands need to be added
- * @addr - gpu address of the read
- * @val - The GPU will wait until the data at address addr becomes
- * equal to value
- */
 static inline int adreno_add_read_cmds(struct kgsl_device *device,
 				unsigned int *cmds, unsigned int addr,
 				unsigned int val, unsigned int nop_gpuaddr)
@@ -302,7 +282,7 @@ static inline int adreno_add_read_cmds(struct kgsl_device *device,
 	unsigned int *start = cmds;
 
 	*cmds++ = cp_type3_packet(CP_WAIT_REG_MEM, 5);
-	/* MEM SPACE = memory, FUNCTION = equals */
+	
 	*cmds++ = 0x13;
 	*cmds++ = addr;
 	*cmds++ = val;
@@ -312,4 +292,21 @@ static inline int adreno_add_read_cmds(struct kgsl_device *device,
 	return cmds - start;
 }
 
-#endif /*__ADRENO_H */
+static inline int adreno_add_idle_cmds(struct adreno_device *adreno_dev,
+							unsigned int *cmds)
+{
+	unsigned int *start = cmds;
+
+	*cmds++ = cp_type3_packet(CP_WAIT_FOR_IDLE, 1);
+	*cmds++ = 0x00000000;
+
+	if ((adreno_dev->gpurev == ADRENO_REV_A305) ||
+		(adreno_dev->gpurev == ADRENO_REV_A320)) {
+		*cmds++ = cp_type3_packet(CP_WAIT_FOR_ME, 1);
+		*cmds++ = 0x00000000;
+	}
+
+	return cmds - start;
+}
+
+#endif 

@@ -29,9 +29,9 @@
 #include <media/videobuf2-msm-mem.h>
 #include <media/msm_camera.h>
 #include <mach/memory.h>
+#include <mach/msm_subsystem_map.h>
 
 #include <media/videobuf2-core.h>
-#include <mach/iommu_domains.h>
 
 #define MAGIC_PMEM 0x0733ac64
 #define MAGIC_CHECK(is, should)               \
@@ -161,16 +161,6 @@ int videobuf2_pmem_contig_mmap_get(struct videobuf2_contig_pmem *mem,
 }
 EXPORT_SYMBOL_GPL(videobuf2_pmem_contig_mmap_get);
 
-/**
- * videobuf_pmem_contig_user_get() - setup user space memory pointer
- * @mem: per-buffer private videobuf-contig-pmem data
- * @vb: video buffer to map
- *
- * This function validates and sets up a pointer to user space memory.
- * Only physically contiguous pfn-mapped memory is accepted.
- *
- * Returns 0 if successful.
- */
 int videobuf2_pmem_contig_user_get(struct videobuf2_contig_pmem *mem,
 					struct videobuf2_msm_offset *offset,
 					enum videobuf2_buffer_type buffer_type,
@@ -186,7 +176,7 @@ int videobuf2_pmem_contig_user_get(struct videobuf2_contig_pmem *mem,
 	if (mem->phyaddr != 0)
 		return 0;
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
-	mem->ion_handle = ion_import_fd(client, (int)mem->vaddr);
+	mem->ion_handle = ion_import_dma_buf(client, (int)mem->vaddr);
 	if (IS_ERR_OR_NULL(mem->ion_handle)) {
 		pr_err("%s ION import failed\n", __func__);
 		return PTR_ERR(mem->ion_handle);
@@ -283,7 +273,7 @@ static int msm_vb2_mem_ops_mmap(void *buf_priv, struct vm_area_struct *vma)
 	D("mem = 0x%x\n", (u32)mem);
 	BUG_ON(!mem);
 	MAGIC_CHECK(mem->magic, MAGIC_PMEM);
-	/* Try to remap memory */
+	
 	size = vma->vm_end - vma->vm_start;
 	size = (size < mem->size) ? size : mem->size;
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);

@@ -33,7 +33,6 @@
 #include <linux/regulator/consumer.h>
 #include <linux/mfd/pm8xxx/pm8xxx-adc.h>
 
-/* User Bank register set */
 #define PM8XXX_ADC_ARB_USRP_CNTRL1			0x197
 #define PM8XXX_ADC_ARB_USRP_CNTRL1_EN_ARB		BIT(0)
 #define PM8XXX_ADC_ARB_USRP_CNTRL1_RSV1			BIT(1)
@@ -174,23 +173,13 @@ static struct pm8xxx_adc_scale_fn adc_scale_fn[] = {
 	[ADC_SCALE_XOTHERM] = {pm8xxx_adc_tdkntcg_therm},
 };
 
-/* On PM8921 ADC the MPP needs to first be configured
-as an analog input to the AMUX pre-mux channel before
-issuing a read request. PM8921 MPP 8 is mapped to AMUX8
-and is common between remote processor's.
-On PM8018 ADC the MPP is directly connected to the AMUX
-pre-mux. Therefore clients of the PM8018 MPP do not need
-to configure the MPP as an analog input to the pre-mux.
-Clients can directly issue request on the pre-mux AMUX
-channel to read the ADC on the MPP */
 static struct pm8xxx_mpp_config_data pm8xxx_adc_mpp_config = {
 	.type		= PM8XXX_MPP_TYPE_A_INPUT,
-	/* AMUX6 is dedicated to be used for apps processor */
+	
 	.level		= PM8XXX_MPP_AIN_AMUX_CH6,
 	.control	= PM8XXX_MPP_AOUT_CTRL_DISABLE,
 };
 
-/* MPP Configuration for default settings */
 static struct pm8xxx_mpp_config_data pm8xxx_adc_mpp_unconfig = {
 	.type		= PM8XXX_MPP_TYPE_SINK,
 	.level		= PM8XXX_MPP_AIN_AMUX_CH5,
@@ -226,8 +215,6 @@ static int32_t pm8xxx_adc_arb_cntrl(uint32_t arb_cntrl,
 		wake_lock(&adc_pmic->adc_wakelock);
 	}
 
-	/* Write twice to the CNTRL register for the arbiter settings
-	   to take into effect */
 	for (i = 0; i < 2; i++) {
 		rc = pm8xxx_writeb(adc_pmic->dev->parent,
 				PM8XXX_ADC_ARB_USRP_CNTRL1, data_arb_cntrl);
@@ -239,7 +226,7 @@ static int32_t pm8xxx_adc_arb_cntrl(uint32_t arb_cntrl,
 
 	if (arb_cntrl) {
 		data_arb_cntrl |= PM8XXX_ADC_ARB_USRP_CNTRL1_REQ;
-		//INIT_COMPLETION(adc_pmic->adc_rslt_completion);
+		INIT_COMPLETION(adc_pmic->adc_rslt_completion);
 		rc = pm8xxx_writeb(adc_pmic->dev->parent,
 			PM8XXX_ADC_ARB_USRP_CNTRL1, data_arb_cntrl);
 	} else
@@ -337,7 +324,6 @@ static uint32_t pm8xxx_adc_write_reg(uint32_t reg, u8 data)
 static int32_t pm8xxx_adc_configure(
 				struct pm8xxx_adc_amux_properties *chan_prop)
 {
-	struct pm8xxx_adc *adc_pmic = pmic_adc;
 	u8 data_amux_chan = 0, data_arb_rsv = 0, data_dig_param = 0;
 	int rc;
 
@@ -372,8 +358,8 @@ static int32_t pm8xxx_adc_configure(
 	if (rc < 0)
 		return rc;
 
-	/* Default 2.4Mhz clock rate */
-	/* Client chooses the decimation */
+	
+	
 	switch (chan_prop->decimation) {
 	case ADC_DECIMATION_TYPE1:
 		data_dig_param |= PM8XXX_ADC_ARB_USRP_DIG_PARAM_DEC_RATE0;
@@ -395,9 +381,6 @@ static int32_t pm8xxx_adc_configure(
 						PM8XXX_ADC_ARB_ANA_DIG);
 	if (rc < 0)
 		return rc;
-
-	if (!pm8xxx_adc_calib_first_adc)
-		enable_irq(adc_pmic->adc_irq);
 
 	rc = pm8xxx_adc_arb_cntrl(1, data_amux_chan);
 	if (rc < 0) {
@@ -431,14 +414,12 @@ static uint32_t pm8xxx_adc_read_adc_code(int32_t *data)
 
 	*data = (rslt_msb << 8) | rslt_lsb;
 
-	/* Use the midpoint to determine underflow or overflow */
+	
 	if (*data > max_ideal_adc_code + (max_ideal_adc_code >> 1))
 		*data |= ((1 << (8 * sizeof(*data) -
 			adc_pmic->adc_prop->bitresolution)) - 1) <<
 			adc_pmic->adc_prop->bitresolution;
 
-	/* Default value for switching off the arbiter after reading
-	   the ADC value. Bit 0 set to 0. */
 	rc = pm8xxx_adc_arb_cntrl(0, CHANNEL_NONE);
 	if (rc < 0) {
 		pr_err("%s: Configuring ADC Arbiter disable"
@@ -477,17 +458,21 @@ static void pm8xxx_adc_btm_cool_scheduler_fn(struct work_struct *work)
 	spin_unlock_irqrestore(&adc_pmic->btm_lock, flags);
 }
 
+void trigger_completion(struct work_struct *work)
+{
+	struct pm8xxx_adc *adc_8xxx = pmic_adc;
+
+	complete(&adc_8xxx->adc_rslt_completion);
+}
+DECLARE_WORK(trigger_completion_work, trigger_completion);
+
 static irqreturn_t pm8xxx_adc_isr(int irq, void *dev_id)
 {
-	struct pm8xxx_adc *adc_8xxx = dev_id;
-
-	disable_irq_nosync(adc_8xxx->adc_irq);
-
 
 	if (pm8xxx_adc_calib_first_adc)
 		return IRQ_HANDLED;
-	/* TODO Handle spurius interrupt condition */
-	complete(&adc_8xxx->adc_rslt_completion);
+
+	schedule_work(&trigger_completion_work);
 
 	return IRQ_HANDLED;
 }
@@ -591,7 +576,7 @@ static uint32_t pm8xxx_adc_calib_device(void)
 					"failed\n", __func__);
 		return rc;
 	}
-	/* Ratiometric Calibration */
+	
 	conv.amux_channel = CHANNEL_MUXOFF;
 	conv.decimation = ADC_DECIMATION_TYPE2;
 	conv.amux_ip_rsv = AMUX_RSV5;
@@ -737,7 +722,6 @@ uint32_t pm8xxx_adc_read(enum pm8xxx_adc_channels channel,
 
 	rc = wait_for_completion_timeout(&adc_pmic->adc_rslt_completion, HZ);
 	if (!rc) {
-		disable_irq(adc_pmic->adc_irq);
 		timeout_count++;
 		pr_err("%s: wait_for_completion_timeout:%d,ch=%d,(count=%d)",
 				__func__, rc, channel, timeout_count);
@@ -795,15 +779,6 @@ uint32_t pm8xxx_adc_mpp_config_read(uint32_t mpp_num,
 		pr_info("PM8xxx MPP base invalid with error %d\n", rc);
 		return rc;
 	}
-/* mask this, because cpu get the adc of USB id pin by MPP8 */
-/*
-	if (mpp_num == PM8XXX_AMUX_MPP_8) {
-		rc = -EINVAL;
-		pr_info("PM8xxx MPP8 is already configured "
-			"to AMUX8. Use pm8xxx_adc_read() instead.\n");
-		return rc;
-	}
-*/
 	mutex_lock(&adc_pmic->mpp_adc_lock);
 
 	rc = pm8xxx_mpp_config(((mpp_num - 1) + adc_pmic->mpp_base),
@@ -1003,8 +978,6 @@ uint32_t pm8xxx_adc_btm_end(void)
 
 	spin_lock_irqsave(&adc_pmic->btm_lock, flags);
 
-	/* Write twice to the CNTRL register for the arbiter settings
-	   to take into effect */
 	for (i = 0; i < 2; i++) {
 		rc = pm8xxx_adc_write_reg(PM8XXX_ADC_ARB_BTM_CNTRL1,
 							data_arb_btm_cntrl);
@@ -1080,23 +1053,6 @@ static int get_adc(void *data, u64 *val)
 }
 DEFINE_SIMPLE_ATTRIBUTE(reg_fops, get_adc, NULL, "%llu\n");
 
-static int get_mpp_adc(void *data, u64 *val)
-{
-	struct pm8xxx_adc_chan_result result;
-	int i = (int)data;
-	int rc;
-
-	rc = pm8xxx_adc_mpp_config_read(i,
-		ADC_MPP_1_AMUX6, &result);
-	if (!rc)
-		pr_info("ADC MPP value raw:%x physical:%lld\n",
-			result.adc_code, result.physical);
-	*val = result.physical;
-
-	return 0;
-}
-DEFINE_SIMPLE_ATTRIBUTE(reg_mpp_fops, get_mpp_adc, NULL, "%llu\n");
-
 #ifdef CONFIG_DEBUG_FS
 static void create_debugfs_entries(void)
 {
@@ -1138,6 +1094,7 @@ static int32_t pm8xxx_adc_init_hwmon(struct platform_device *pdev)
 						adc_pmic->adc_channel[i].name;
 		memcpy(&adc_pmic->sens_attr[i], &pm8xxx_adc_attr,
 						sizeof(pm8xxx_adc_attr));
+		sysfs_attr_init(&adc_pmic->sens_attr[i].dev_attr.attr);
 		rc = device_create_file(&pdev->dev,
 				&adc_pmic->sens_attr[i].dev_attr);
 		if (rc) {
@@ -1260,9 +1217,9 @@ static int __devinit pm8xxx_adc_probe(struct platform_device *pdev)
 	if (rc) {
 		dev_err(&pdev->dev, "failed to request adc irq "
 						"with error %d\n", rc);
+	} else {
+		enable_irq_wake(adc_pmic->adc_irq);
 	}
-
-	disable_irq_nosync(adc_pmic->adc_irq);
 
 	adc_pmic->btm_warm_irq = platform_get_irq(pdev, PM8XXX_ADC_IRQ_1);
 	if (adc_pmic->btm_warm_irq < 0)
@@ -1321,9 +1278,9 @@ static int __devinit pm8xxx_adc_probe(struct platform_device *pdev)
 		pr_err("failed to request pa_therm vreg with error %d\n", rc);
 		pa_therm = NULL;
 	}
-
 	if (pdata->pm8xxx_adc_device_register)
 		pdata->pm8xxx_adc_device_register();
+
 	return 0;
 }
 

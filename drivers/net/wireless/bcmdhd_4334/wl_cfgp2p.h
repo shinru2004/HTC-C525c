@@ -32,26 +32,22 @@ struct wl_priv;
 extern u32 wl_dbg_level;
 
 typedef struct wifi_p2p_ie wifi_wfd_ie_t;
-/* Enumeration of the usages of the BSSCFGs used by the P2P Library.  Do not
- * confuse this with a bsscfg index.  This value is an index into the
- * saved_ie[] array of structures which in turn contains a bsscfg index field.
- */
 typedef enum {
-	P2PAPI_BSSCFG_PRIMARY, /* maps to driver's primary bsscfg */
-	P2PAPI_BSSCFG_DEVICE, /* maps to driver's P2P device discovery bsscfg */
-	P2PAPI_BSSCFG_CONNECTION, /* maps to driver's P2P connection bsscfg */
+	P2PAPI_BSSCFG_PRIMARY, 
+	P2PAPI_BSSCFG_DEVICE, 
+	P2PAPI_BSSCFG_CONNECTION, 
 	P2PAPI_BSSCFG_MAX
 } p2p_bsscfg_type_t;
 
-#define IE_MAX_LEN 300
-#define IE_MAX_LEN_PROB_RESP 768
-/* Structure to hold all saved P2P and WPS IEs for a BSSCFG */
+#define IE_MAX_LEN 512
+#define VNDR_IES_MAX_BUF_LEN	1400
+#define VNDR_IES_BUF_LEN 		512
 struct p2p_saved_ie {
-	u8  p2p_probe_req_ie[IE_MAX_LEN];
-	u8  p2p_probe_res_ie[IE_MAX_LEN_PROB_RESP];
-	u8  p2p_assoc_req_ie[IE_MAX_LEN];
-	u8  p2p_assoc_res_ie[IE_MAX_LEN];
-	u8  p2p_beacon_ie[IE_MAX_LEN];
+	u8  p2p_probe_req_ie[VNDR_IES_BUF_LEN];
+	u8  p2p_probe_res_ie[VNDR_IES_MAX_BUF_LEN];
+	u8  p2p_assoc_req_ie[VNDR_IES_BUF_LEN];
+	u8  p2p_assoc_res_ie[VNDR_IES_BUF_LEN];
+	u8  p2p_beacon_ie[VNDR_IES_MAX_BUF_LEN];
 	u32 p2p_probe_req_ie_len;
 	u32 p2p_probe_res_ie_len;
 	u32 p2p_assoc_req_ie_len;
@@ -67,7 +63,7 @@ struct p2p_bss {
 };
 
 struct p2p_info {
-	bool on;    /* p2p on/off switch */
+	bool on;    
 	bool scan;
 	bool vif_created;
 	s8 vir_ifname[IFNAMSIZ];
@@ -79,10 +75,21 @@ struct p2p_info {
 	wl_p2p_sched_t noa;
 	wl_p2p_ops_t ops;
 	wlc_ssid_t ssid;
-	spinlock_t timer_lock;
 };
 
-/* dongle status */
+#define MAX_VNDR_IE_NUMBER	5
+
+struct parsed_vndr_ie_info {
+	char *ie_ptr;
+	u32 ie_len;	
+	vndr_ie_t vndrie;
+};
+
+struct parsed_vndr_ies {
+	u32 count;
+	struct parsed_vndr_ie_info ie_info[MAX_VNDR_IE_NUMBER];
+};
+
 enum wl_cfgp2p_status {
 	WLP2P_STATUS_DISCOVERY_ON = 0,
 	WLP2P_STATUS_SEARCH_ENABLED,
@@ -94,7 +101,8 @@ enum wl_cfgp2p_status {
 	WLP2P_STATUS_LISTEN_EXPIRED,
 	WLP2P_STATUS_ACTION_TX_COMPLETED,
 	WLP2P_STATUS_ACTION_TX_NOACK,
-	WLP2P_STATUS_SCANNING
+	WLP2P_STATUS_SCANNING,
+	WLP2P_STATUS_GO_NEG_PHASE
 };
 
 
@@ -115,7 +123,6 @@ enum wl_cfgp2p_status {
 #define p2p_scan(wl) ((wl)->p2p->scan)
 #define p2p_is_on(wl) ((wl)->p2p && (wl)->p2p->on)
 
-/* dword align allocation */
 #define WLC_IOCTL_MAXLEN 8192
 #define MAC2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5]
 #define MACSTR "%02x:%02x:%02x:%02x:%02x:%02x"
@@ -142,6 +149,16 @@ enum wl_cfgp2p_status {
 		}									\
 	} while (0)
 
+#define INIT_TIMER(timer, func, duration, extra_delay)	\
+	do {				   \
+		init_timer(timer); \
+		timer->function = func; \
+		timer->expires = jiffies + msecs_to_jiffies(duration + extra_delay); \
+		timer->data = (unsigned long) wl; \
+		add_timer(timer); \
+	} while (0);
+extern void
+wl_cfgp2p_listen_expired(unsigned long data);
 extern bool
 wl_cfgp2p_is_pub_action(void *frame, u32 frame_len);
 extern bool
@@ -162,6 +179,8 @@ wl_cfgp2p_set_p2p_mode(struct wl_priv *wl, u8 mode,
 extern s32
 wl_cfgp2p_ifadd(struct wl_priv *wl, struct ether_addr *mac, u8 if_type,
             chanspec_t chspec);
+extern s32
+wl_cfgp2p_ifdisable(struct wl_priv *wl, struct ether_addr *mac);
 extern s32
 wl_cfgp2p_ifdel(struct wl_priv *wl, struct ether_addr *mac);
 extern s32
@@ -191,6 +210,10 @@ wl_cfgp2p_find_wpaie(u8 *parse, u32 len);
 extern wpa_ie_fixed_t *
 wl_cfgp2p_find_wpsie(u8 *parse, u32 len);
 
+#if defined(CUSTOMER_OUI)
+extern wifi_p2p_ie_t *
+wl_cfgp2p_find_customer_ie(u8 *parse, u32 *len);
+#endif
 extern wifi_p2p_ie_t *
 wl_cfgp2p_find_p2pie(u8 *parse, u32 len);
 
@@ -262,24 +285,33 @@ wl_cfgp2p_register_ndev(struct wl_priv *wl);
 extern s32
 wl_cfgp2p_unregister_ndev(struct wl_priv *wl);
 
-/* WiFi Direct */
 #define SOCIAL_CHAN_1 1
 #define SOCIAL_CHAN_2 6
 #define SOCIAL_CHAN_3 11
 #define SOCIAL_CHAN_CNT 3
+#define AF_PEER_SEARCH_CNT 2
 #define WL_P2P_WILDCARD_SSID "DIRECT-"
 #define WL_P2P_WILDCARD_SSID_LEN 7
 #define WL_P2P_INTERFACE_PREFIX "p2p"
 #define WL_P2P_TEMP_CHAN 11
 
+#define IS_PROV_DISC_WITHOUT_GROUP_ID(p2p_ie, len) \
+	(wl_cfgp2p_retreive_p2pattrib(p2p_ie, P2P_SEID_GROUP_ID) == NULL)
 
 #define IS_GAS_REQ(frame, len) (wl_cfgp2p_is_gas_action(frame, len) && \
 					((frame->action == P2PSD_ACTION_ID_GAS_IREQ) || \
 					(frame->action == P2PSD_ACTION_ID_GAS_CREQ)))
-#define IS_P2P_PUB_ACT_REQ(frame, len) (wl_cfgp2p_is_pub_action(frame, len) && \
-						((frame->subtype == P2P_PAF_GON_REQ) || \
-						(frame->subtype == P2P_PAF_INVITE_REQ) || \
-						(frame->subtype == P2P_PAF_PROVDIS_REQ)))
+#define IS_P2P_PUB_ACT_REQ(frame, p2p_ie, len) \
+					(wl_cfgp2p_is_pub_action(frame, len) && \
+					((frame->subtype == P2P_PAF_GON_REQ) || \
+					(frame->subtype == P2P_PAF_INVITE_REQ) || \
+					((frame->subtype == P2P_PAF_PROVDIS_REQ) && \
+						IS_PROV_DISC_WITHOUT_GROUP_ID(p2p_ie, len))))
+#define IS_P2P_PUB_ACT_RSP_SUBTYPE(subtype) ((subtype == P2P_PAF_GON_RSP) || \
+							((subtype == P2P_PAF_GON_CONF) || \
+							(subtype == P2P_PAF_INVITE_RSP) || \
+							(subtype == P2P_PAF_PROVDIS_RSP)))
 #define IS_P2P_SOCIAL(ch) ((ch == SOCIAL_CHAN_1) || (ch == SOCIAL_CHAN_2) || (ch == SOCIAL_CHAN_3))
-#define IS_P2P_SSID(ssid) (memcmp(ssid, WL_P2P_WILDCARD_SSID, WL_P2P_WILDCARD_SSID_LEN) == 0)
-#endif				/* _wl_cfgp2p_h_ */
+#define IS_P2P_SSID(ssid, len) (!memcmp(ssid, WL_P2P_WILDCARD_SSID, WL_P2P_WILDCARD_SSID_LEN) && \
+					(len == WL_P2P_WILDCARD_SSID_LEN))
+#endif				

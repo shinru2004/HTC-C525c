@@ -1,10 +1,12 @@
+ifeq ($(CONFIG_FB_MSM_MDSS),y)
+obj-y += mdss/
+else
 obj-y := msm_fb.o
 
 obj-$(CONFIG_FB_MSM_LOGO) += logo.o
 obj-$(CONFIG_FB_BACKLIGHT) += msm_fb_bl.o
 
 ifeq ($(CONFIG_FB_MSM_MDP_HW),y)
-
 # MDP
 obj-y += mdp.o
 
@@ -118,17 +120,15 @@ obj-$(CONFIG_FB_MSM_MDDI_QUICKVX) += mddi_quickvx.o
 endif
 
 ifeq ($(CONFIG_FB_MSM_MIPI_PANEL_DETECT),y)
-#obj-y += mipi_toshiba_video_wvga_pt.o mipi_toshiba_video_wsvga_pt.o mipi_toshiba_video_wuxga.o
-#obj-y += mipi_novatek_video_qhd_pt.o mipi_novatek_cmd_qhd_pt.o
-#obj-y += mipi_orise_video_720p_pt.o mipi_orise_cmd_720p_pt.o
-#obj-y += mipi_renesas_video_fwvga_pt.o mipi_renesas_cmd_fwvga_pt.o
-#obj-y += mipi_NT35510_video_wvga_pt.o mipi_NT35510_cmd_wvga_pt.o
-#obj-y += mipi_truly_tft540960_1_e_video_qhd_pt.o mipi_truly_tft540960_1_e_cmd_qhd_pt.o
-#obj-y += mipi_chimei_wxga_pt.o
-#obj-y += mipi_chimei_wuxga.o
-#obj-y += mipi_truly_video_wvga_pt.o
-obj-y += mipi_novatek_video_wvga_pt.o
-obj-y += mipi_orise_cmd_qhd_pt.o
+obj-y += mipi_toshiba_video_wvga_pt.o mipi_toshiba_video_wsvga_pt.o mipi_toshiba_video_wuxga.o
+obj-y += mipi_novatek_video_qhd_pt.o mipi_novatek_cmd_qhd_pt.o mipi_novatek_cmd_720p.o
+obj-y += mipi_orise_video_720p_pt.o mipi_orise_cmd_720p_pt.o
+obj-y += mipi_renesas_video_fwvga_pt.o mipi_renesas_cmd_fwvga_pt.o
+obj-y += mipi_NT35510_video_wvga_pt.o mipi_NT35510_cmd_wvga_pt.o
+obj-y += mipi_truly_tft540960_1_e_video_qhd_pt.o mipi_truly_tft540960_1_e_cmd_qhd_pt.o
+obj-y += mipi_chimei_wxga_pt.o
+obj-y += mipi_chimei_wuxga.o
+obj-y += mipi_truly_video_wvga_pt.o
 else
 obj-$(CONFIG_FB_MSM_MIPI_TOSHIBA_VIDEO_WVGA_PT) += mipi_toshiba_video_wvga_pt.o
 obj-$(CONFIG_FB_MSM_MIPI_TOSHIBA_VIDEO_WSVGA_PT) += mipi_toshiba_video_wsvga_pt.o
@@ -167,31 +167,28 @@ obj-$(CONFIG_FB_MSM_LCDC_SAMSUNG_OLED_PT) += lcdc_samsung_oled_pt.o
 obj-$(CONFIG_FB_MSM_HDMI_ADV7520_PANEL) += adv7520.o
 obj-$(CONFIG_FB_MSM_LCDC_ST15_WXGA) += lcdc_st15.o
 obj-$(CONFIG_FB_MSM_LVDS_CHIMEI_WXGA) += lvds_chimei_wxga.o
+obj-$(CONFIG_FB_MSM_LVDS_FRC_FHD) += lvds_frc_fhd.o
 obj-$(CONFIG_FB_MSM_HDMI_MSM_PANEL) += hdmi_msm.o
 obj-$(CONFIG_FB_MSM_EXT_INTERFACE_COMMON) += external_common.o
 obj-$(CONFIG_FB_MSM_LCDC_TRULY_HVGA_IPS3P2335) += lcdc_truly_ips3p2335.o
 
 obj-$(CONFIG_FB_MSM_TVOUT) += tvout_msm.o
 
-ccflags-y := -I$(src)/mhl
-obj-$(CONFIG_FB_MSM_HDMI_MHL_8334) += mhl-8334.o
-mhl-8334-objs  += mhl/mhl_8334.o
-mhl-8334-objs  += mhl/mhl_i2c_utils.o
-
 obj-$(CONFIG_FB_MSM_EXTMDDI_SVGA) += mddi_ext_lcd.o
 
 obj-$(CONFIG_FB_MSM_WRITEBACK_MSM_PANEL) += mdp4_wfd_writeback_panel.o
 obj-$(CONFIG_FB_MSM_WRITEBACK_MSM_PANEL) += mdp4_wfd_writeback.o
 obj-$(CONFIG_FB_MSM_WRITEBACK_MSM_PANEL) += mdp4_overlay_writeback.o
-
-obj-$(CONFIG_MSM_VIDC_1080P) += vidc/
-obj-$(CONFIG_MSM_VIDC_720P) += vidc/
 else
 obj-$(CONFIG_FB_MSM_EBI2) += ebi2_host.o
 obj-$(CONFIG_FB_MSM_EBI2) += ebi2_lcd.o
 obj-y += msm_fb_panel.o
 obj-$(CONFIG_FB_MSM_EBI2_EPSON_S1D_QVGA_PANEL) += ebi2_epson_s1d_qvga.o
 endif
+endif
 
+obj-$(CONFIG_MSM_VIDC_1080P) += vidc/
+obj-$(CONFIG_MSM_VIDC_720P) += vidc/
+obj-$(CONFIG_FB_MSM_HDMI_MHL_SII9234)  += sii9234/
 clean:
 	rm *.o .*cmd

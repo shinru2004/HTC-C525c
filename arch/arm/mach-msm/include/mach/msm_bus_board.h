@@ -39,6 +39,8 @@ struct msm_bus_fabric_registration {
 	const struct msm_bus_board_algorithm *board_algo;
 	int hw_sel;
 	void *hw_data;
+	uint32_t qos_freq;
+	bool virt;
 };
 
 enum msm_bus_bw_tier_type {
@@ -81,21 +83,22 @@ extern struct msm_bus_fabric_registration msm_bus_8930_mm_fabric_pdata;
 extern struct msm_bus_fabric_registration msm_bus_8930_sys_fpb_pdata;
 extern struct msm_bus_fabric_registration msm_bus_8930_cpss_fpb_pdata;
 
+extern struct msm_bus_fabric_registration msm_bus_8974_sys_noc_pdata;
+extern struct msm_bus_fabric_registration msm_bus_8974_mmss_noc_pdata;
+extern struct msm_bus_fabric_registration msm_bus_8974_bimc_pdata;
+extern struct msm_bus_fabric_registration msm_bus_8974_ocmem_noc_pdata;
+extern struct msm_bus_fabric_registration msm_bus_8974_periph_noc_pdata;
+extern struct msm_bus_fabric_registration msm_bus_8974_config_noc_pdata;
+extern struct msm_bus_fabric_registration msm_bus_8974_ocmem_vnoc_pdata;
+
 void msm_bus_rpm_set_mt_mask(void);
 int msm_bus_board_rpm_get_il_ids(uint16_t *id);
 int msm_bus_board_get_iid(int id);
 
-/*
- * These macros specify the convention followed for allocating
- * ids to fabrics, masters and slaves for 8x60.
- *
- * A node can be identified as a master/slave/fabric by using
- * these ids.
- */
 #define FABRIC_ID_KEY 1024
 #define SLAVE_ID_KEY ((FABRIC_ID_KEY) >> 1)
 #define NUM_FAB 5
-#define MAX_FAB_KEY 7168  /* OR(All fabric ids) */
+#define MAX_FAB_KEY 7168  
 
 #define GET_FABID(id) ((id) & MAX_FAB_KEY)
 
@@ -103,10 +106,6 @@ int msm_bus_board_get_iid(int id);
 #define IS_SLAVE(id) ((NODE_ID(id)) >= SLAVE_ID_KEY ? 1 : 0)
 #define CHECK_ID(iid, id) (((iid & id) != id) ? -ENXIO : iid)
 
-/*
- * The following macros are used to format the data for port halt
- * and unhalt requests.
- */
 #define MSM_BUS_CLK_HALT 0x1
 #define MSM_BUS_CLK_HALT_MASK 0x1
 #define MSM_BUS_CLK_HALT_FIELDSIZE 0x1
@@ -146,7 +145,20 @@ int msm_bus_board_get_iid(int id);
 		MSM_BUS_CLK_UNHALT<<MSM_BUS_MASTER_SHIFT((master),\
 		MSM_BUS_CLK_HALT_FIELDSIZE))\
 
-/* Topology related enums */
+#define RPM_BUS_SLAVE_REQ	0x766c7362
+#define RPM_BUS_MASTER_REQ	0x73616d62
+
+enum msm_bus_rpm_slave_field_type {
+	RPM_SLAVE_FIELD_BW = 0x00007762,
+};
+
+enum msm_bus_rpm_mas_field_type {
+	RPM_MASTER_FIELD_BW =		0x00007762,
+	RPM_MASTER_FIELD_BW_T0 =	0x30747762,
+	RPM_MASTER_FIELD_BW_T1 =	0x31747762,
+	RPM_MASTER_FIELD_BW_T2 =	0x32747762,
+};
+
 enum msm_bus_fabric_type {
 	MSM_BUS_FAB_DEFAULT = 0,
 	MSM_BUS_FAB_APPSS = 0,
@@ -430,4 +442,4 @@ enum msm_bus_fabric_slave_type {
 		MSM_BUS_SYSTEM_SLAVE_CPSS_FPB,
 };
 
-#endif /*__ASM_ARCH_MSM_BUS_BOARD_H */
+#endif 

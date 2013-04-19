@@ -36,6 +36,38 @@ config IMX074
 	depends on MSM_CAMERA
 	---help---
 	SONY 13.5 MP Bayer Sensor
+
+config S5K3H2YX
+	bool "Sensor s5k3h2yx (Samsung 8M)"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Support for S5K3H2YX samsung sensor driver.
+	  It is a Bayer 8MP sensor with auto focus and it supports
+	  two mipi lanes.
+
+config S5K6A1GX
+	bool "Sensor s5k6a1gx (Samsung 1.3M)"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Support for S5K6A1GX samsung sensor driver.
+	  It is a Bayer 1.3MP sensor it supports one mipi lanes.
+
+config AR0260
+	bool "Sensor ar0260"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Support for AR0260 sensor driver.
+
+config OV2722
+	bool "Sensor ov2722"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Support for OV2722 sensor driver.
+
 config OV5640
 	bool "Sensor OV5640 (YUV 5M)"
 	depends on MSM_CAMERA && !MSM_CAMERA_V4L2
@@ -82,8 +114,8 @@ config WEBCAM_OV9726
 #	This uses the CSI interface.
 config VX6953
 	bool "Sensor VX6953 (BAYER 5M)"
-	depends on MSM_CAMERA && (ARCH_MSM7X30 || ARCH_MSM8X60) && !MSM_CAMERA_V4L2
-	default y
+	depends on MSM_CAMERA && (ARCH_MSM7X30 || ARCH_MSM8X60)
+	default n
 	---help---
 	STM 5M Bayer Sensor with EDOF
 config SN12M0PZ
@@ -136,6 +168,13 @@ config IMX074_ACT
 	---help---
 	Actuator for SONY 13.5 MP Bayer Sensor
 
+config S5K3H2YX_ACT
+	bool "Sensor s5k3h2yx actuator"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Autofocus of s5k3h2yx actuator
+
 config S5K3E2FX
 	bool "Sensor s5k3e2fx (Samsung 5M)"
 	depends on MSM_CAMERA && !ARCH_MSM8X60 && !MSM_CAMERA_V4L2
@@ -159,72 +198,6 @@ config S5K4E1
 	  It is a Bayer 5MP sensor with auto focus and it supports
 	  two mipi lanes, required for msm7x2xA platform.
 	  Say Y here if this is msm7x2xA variant platform.
-
-config RAWCHIP
-	bool "Rawchip"
-	depends on MSM_CAMERA
-	default n
-	---help---
-	  ST Yushan rawchip
-
-config RAWCHIP_MCLK
-	bool "Rawchip MCLK"
-	depends on MSM_CAMERA
-	default n
-	---help---
-	  ST Yushan rawchip MCLK
-
-config S5K4E5YX_ACT
-	bool "Sensor S5K4E5YX actuator"
-	depends on MSM_CAMERA
-	default n
-	---help---
-	  Autofocus of s5k4e5yx actuator
-
-config OV5693_ACT
-	bool "Sensor OV5693 actuator"
-	depends on MSM_CAMERA
-	default n
-	---help---
-	  Autofocus of ov5693 actuator
-
-config OV5693
-	bool "Sensor ov5693 (BAYER 5M)"
-	depends on MSM_CAMERA
-	default n
-	---help---
-	  OV 5M Bayer Sensor with AutoFocus
-
-config S5K6A2YA
-	bool "Sensor s5k6a2ya (Samsung 1.6M)"
-	default n
-	---help---
-	  Support for S5K6A2YA samsung sensor driver.
-	  It is a Bayer 1.6MP sensor it supports one mipi lanes.
-
-config S5K4E5YX
-	bool "Sensor Sensor S5K4E5YX (Samsung 5M)"
-	depends on MSM_CAMERA
-	default n
-	---help---
-	  Support for S5k4E5YX samsung sensor driver.
-	  It is a Bayer 5MP sensor with auto focus and it supports
-	  two mipi lanes, required for msm8930 platform.
-	  Say Y here if this is msm8930 variant platform.
-
-config S5K6A1GX
-	bool "Sensor s5k6a1gx (Samsung 1.3M)"
-	default n
-	---help---
-	  Support for S5K6A1GX samsung sensor driver.
-	  It is a Bayer 1.3MP sensor it supports one mipi lanes.
-
-config MT9V113
-	bool "Sensor mt9v113 (VGA YUV)"
-	default n
-	---help---
-	  Support for MT9V113 Micron sensor driver.
-	  It is a Bayer 0.3MP sensor it supports two mipi lanes.
 
 config DW9712_ACT
 	bool "Lens actuator dw9721"
@@ -291,6 +264,27 @@ config MSM_VPE
 	---help---
 	  Enable support for Video Pre-processing Engine
 
+config RAWCHIP
+	bool "Rawchip"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  ST Yushan rawchip
+
+config RAWCHIPII
+        bool "RawchipII"
+        depends on MSM_CAMERA
+        default n
+        ---help---
+          ST Yushan rawchipII
+
+config CAMERA_IMAGE_NONE_BOARD
+	bool "CameraImageNoneBoard"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  camera image none board
+
 config QUP_EXCLUSIVE_TO_CAMERA
 	bool "QUP exclusive to camera"
 	depends on MSM_CAMERA
@@ -312,16 +306,125 @@ config S5K3L1YX
 		hfr video at 60, 90 and 120 fps.
 
 config IMX091
-        bool "Sensor imx091 (Sony 13MP)"
-        depends on MSM_CAMERA
+	bool "Sensor IMX091 (BAYER 13M)"
+	depends on MSM_CAMERA
 	---help---
-	  Sony 13MP sensor back camera that uses 4 mipi lanes,
-	  runs at 30 fps preview and 14 fps snapshot
+	SONY 13 MP Bayer Sensor
 
-config MSM_V4L2_VIDEO_OVERLAY_DEVICE
-	tristate "Qualcomm MSM V4l2 video overlay device"
+config IMX175
+	bool "Sensor IMX175 (BAYER 8M)"
+	depends on MSM_CAMERA
 	---help---
-	  Enables support for the MSM V4L2 video
-	  overlay driver. This allows video rendering
-	  apps to render overlaid video using Video4Linux2
-	  APIs, by using /dev/videoX device
+	SONY 8 MP Bayer Sensor
+
+config IMX135
+	bool "Sensor IMX135 (BAYER 13M)"
+	depends on MSM_CAMERA
+	---help---
+	SONY 13 MP Bayer Sensor
+
+config OV8838
+	bool "Sensor OV8838 (OmniVision 8M)"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Support for OV8838 OmniVision sensor driver.
+	  It is a Bayer 8MP sensor with auto focus and it supports
+	  four mipi lanes and BSI.
+
+config IMX175_ACT
+	bool "Sensor imx175 actuator"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Autofocus of imx175 actuator
+
+config RUMBAS_ACT
+	bool "RUMBA-S actuator"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Autofocus of RUMBA-S actuator
+
+config AD5823_ACT
+       bool "Lens actuator ad5823"
+       depends on MSM_CAMERA
+       ---help---
+         ad5823 lens actuator driver for SONY IMX175 and IMX091.
+
+config AD5816_ACT
+       bool "Lens actuator ad5816"
+       depends on MSM_CAMERA
+       ---help---
+         ad5816 lens actuator driver for SONY IMX175 and IMX091.
+
+config TI201_ACT
+       bool "Lens actuator ti201"
+       depends on MSM_CAMERA
+       ---help---
+         ti201 lens actuator driver for SONY IMX175 and IMX091.
+
+config MT9V113
+	bool "Sensor mt9v113 (VGA YUV)"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Support for MT9V113 Micron sensor driver.
+	  It is a Bayer 0.3MP sensor it supports two mipi lanes.
+
+config IMX175_2LANE
+	bool "Sensor IMX175 2-Lane(BAYER 8M)"
+	depends on MSM_CAMERA
+	---help---
+	SONY 8 MP Bayer Sensor for 2-lane hardware
+
+config OV5693_ACT
+	bool "Sensor OV5693 actuator"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Autofocus of ov5693 actuator
+
+config OV5693
+	bool "Sensor ov5693 (BAYER 5M)"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  OV 5M Bayer Sensor with AutoFocus
+
+config RAWCHIP_MCLK
+	bool "Rawchip MCLK"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  ST Yushan rawchip MCLK
+
+config DISABLE_MCLK_RAWCHIP_TO_MAINCAM
+	bool "DISABLE MCLK FROM RAWCHIP TO MAINCAM"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  For the design for K2 two MCLK control of rawchip
+
+config S5K6A2YA
+	bool "Sensor s5k6a2ya (Samsung 1.6M)"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Support for S5K6A2YA samsung sensor driver.
+	  It is a Bayer 1.6MP sensor it supports one mipi lanes.
+
+config S5K6AAFX
+	bool "Sensor s5k6aafx (Samsung 1.3M)"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	  Samsung 1.3M without Autofocus
+
+config VD6869
+	bool "Sensor VD6869 (BAYER 4M)"
+	depends on MSM_CAMERA
+	default n
+	---help---
+	ST 4MP Bayer Sensor
+

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,64 +19,19 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/wait.h>
-#include <sound/apr_audio.h>
-#include <sound/q6asm.h>
 #include <asm/atomic.h>
 #include <asm/ioctls.h>
 #include "audio_utils.h"
 
-//htc audio ++
 #undef pr_info
 #undef pr_err
 #define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
 #define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
-//htc audio --
 
-/* Buffer with meta*/
 #define PCM_BUF_SIZE		(4096 + sizeof(struct meta_in))
 
-/* Maximum 10 frames in buffer with meta */
 #define FRAME_SIZE		(1 + ((61+sizeof(struct meta_out_dsp)) * 10))
 
-void q6asm_amrwb_in_cb(uint32_t opcode, uint32_t token,
-		uint32_t *payload, void *priv)
-{
-	struct q6audio_in * audio = (struct q6audio_in *)priv;
-	unsigned long flags;
-
-	pr_debug("%s:session id %d: opcode - %d\n", __func__,
-			audio->ac->session, opcode);
-
-	spin_lock_irqsave(&audio->dsp_lock, flags);
-	switch (opcode) {
-	case ASM_DATA_EVENT_READ_DONE:
-		audio_in_get_dsp_frames(audio, token, payload);
-		break;
-	case ASM_DATA_EVENT_WRITE_DONE:
-		atomic_inc(&audio->in_count);
-		wake_up(&audio->write_wait);
-		break;
-	case ASM_DATA_CMDRSP_EOS:
-		audio->eos_rsp = 1;
-		wake_up(&audio->read_wait);
-		break;
-	case ASM_STREAM_CMDRSP_GET_ENCDEC_PARAM:
-		break;
-	case ASM_STREAM_CMDRSP_GET_PP_PARAMS:
-		break;
-	case ASM_SESSION_EVENT_TX_OVERFLOW:
-		pr_err("%s:session id %d: ASM_SESSION_EVENT_TX_OVERFLOW\n",
-			__func__, audio->ac->session);
-		break;
-	default:
-		pr_err("%s:session id %d: Ignore opcode[0x%x]\n", __func__,
-				audio->ac->session, opcode);
-		break;
-	}
-	spin_unlock_irqrestore(&audio->dsp_lock, flags);
-}
-
-/* ------------------- device --------------------- */
 static long amrwb_in_ioctl(struct file *file,
 				unsigned int cmd, unsigned long arg)
 {
@@ -136,7 +91,7 @@ static long amrwb_in_ioctl(struct file *file,
 			break;
 		}
 		while (cnt++ < audio->str_cfg.buffer_count)
-			q6asm_read(audio->ac); /* Push buffer to DSP */
+			q6asm_read(audio->ac); 
 		rc = 0;
 		pr_debug("%s:session id %d: AUDIO_START success enable[%d]\n",
 				__func__, audio->ac->session, audio->enabled);
@@ -173,12 +128,9 @@ static long amrwb_in_ioctl(struct file *file,
 			rc = -EINVAL;
 			break;
 		}
-		/* ToDo: AMR WB encoder accepts values between 0-8
-		   while openmax provides value between 9-17
-		   as per spec */
 		enc_cfg->band_mode = cfg.band_mode;
 		enc_cfg->dtx_enable = (cfg.dtx_enable ? 1 : 0);
-		/* Currently DSP does not support different frameformat */
+		
 		enc_cfg->frame_format = 0;
 		pr_debug("%s:session id %d: band_mode = 0x%x dtx_enable=0x%x\n",
 				__func__, audio->ac->session,
@@ -204,7 +156,7 @@ static int amrwb_in_open(struct inode *inode, struct file *file)
 								__func__);
 		return -ENOMEM;
 	}
-	/* Allocate memory for encoder config param */
+	
 	audio->enc_cfg = kzalloc(sizeof(struct msm_audio_amrwb_enc_config),
 				GFP_KERNEL);
 	if (audio->enc_cfg == NULL) {
@@ -222,9 +174,6 @@ static int amrwb_in_open(struct inode *inode, struct file *file)
 	init_waitqueue_head(&audio->read_wait);
 	init_waitqueue_head(&audio->write_wait);
 
-	/* Settings will be re-config at AUDIO_SET_CONFIG,
-	* but at least we need to have initial config
-	*/
 	audio->str_cfg.buffer_size = FRAME_SIZE;
 	audio->str_cfg.buffer_count = FRAME_NUM;
 	audio->min_frame_size = 32;
@@ -238,7 +187,7 @@ static int amrwb_in_open(struct inode *inode, struct file *file)
 	audio->buf_cfg.meta_info_enable = 0x01;
 	audio->buf_cfg.frames_per_buf = 0x01;
 
-	audio->ac = q6asm_audio_client_alloc((app_cb)q6asm_amrwb_in_cb,
+	audio->ac = q6asm_audio_client_alloc((app_cb)q6asm_in_cb,
 				(void *)audio);
 
 	if (!audio->ac) {
@@ -249,7 +198,7 @@ static int amrwb_in_open(struct inode *inode, struct file *file)
 		return -ENOMEM;
 	}
 
-	/* open amrwb encoder in T/NT mode */
+	
 	if ((file->f_mode & FMODE_WRITE) &&
 		(file->f_mode & FMODE_READ)) {
 		audio->feedback = NON_TUNNEL_MODE;
@@ -273,7 +222,7 @@ static int amrwb_in_open(struct inode *inode, struct file *file)
 			rc = -ENODEV;
 			goto fail;
 		}
-		/* register for tx overflow (valid for tunnel mode only) */
+		
 		rc = q6asm_reg_tx_overflow(audio->ac, 0x01);
 		if (rc < 0) {
 			pr_err("%s:session id %d: TX Overflow registration"

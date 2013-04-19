@@ -13,7 +13,7 @@
  *
  */
 
-#include <asm/mach/time.h>
+#include <linux/module.h>
 #include <linux/android_alarm.h>
 #include <linux/device.h>
 #include <linux/miscdevice.h>
@@ -21,9 +21,10 @@
 #include <linux/platform_device.h>
 #include <linux/sched.h>
 #include <linux/spinlock.h>
-#include <linux/sysdev.h>
 #include <linux/uaccess.h>
 #include <linux/wakelock.h>
+
+#include <asm/mach/time.h>
 
 #define ANDROID_ALARM_PRINT_INFO (1U << 0)
 #define ANDROID_ALARM_PRINT_IO (1U << 1)
@@ -43,8 +44,7 @@ module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 	ANDROID_ALARM_RTC_WAKEUP_MASK | \
 	ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP_MASK)
 
-/* support old usespace code */
-#define ANDROID_ALARM_SET_OLD               _IOW('a', 2, time_t) /* set alarm */
+#define ANDROID_ALARM_SET_OLD               _IOW('a', 2, time_t) 
 #define ANDROID_ALARM_SET_AND_WAIT_OLD      _IOW('a', 3, time_t)
 
 static int alarm_opened;
@@ -118,7 +118,7 @@ static long alarm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		}
 from_old_alarm_set:
 		spin_lock_irqsave(&alarm_slock, flags);
-		pr_alarm(IO, "alarm %d set %ld.%09ld\n", alarm_type,
+		pr_alarm(INFO, "alarm %d set %ld.%09ld\n", alarm_type,
 			new_alarm_time.tv_sec, new_alarm_time.tv_nsec);
 		alarm_enabled |= alarm_type_mask;
 		alarm_start_range(&alarms[alarm_type],
@@ -128,7 +128,7 @@ from_old_alarm_set:
 		if (ANDROID_ALARM_BASE_CMD(cmd) != ANDROID_ALARM_SET_AND_WAIT(0)
 		    && cmd != ANDROID_ALARM_SET_AND_WAIT_OLD)
 			break;
-		/* fall though */
+		
 	case ANDROID_ALARM_WAIT:
 		spin_lock_irqsave(&alarm_slock, flags);
 		pr_alarm(IO, "alarm wait\n");

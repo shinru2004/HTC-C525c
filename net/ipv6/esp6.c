@@ -51,15 +51,6 @@ struct esp_skb_cb {
 
 static u32 esp6_get_mtu(struct xfrm_state *x, int mtu);
 
-/*
- * Allocate an AEAD request structure with extra space for SG and IV.
- *
- * For alignment considerations the upper 32 bits of the sequence number are
- * placed at the front, if present. Followed by the IV, the request and finally
- * the SG list.
- *
- * TODO: Use spare space in skb for this where possible.
- */
 static void *esp_alloc_tmp(struct crypto_aead *aead, int nfrags, int seqihlen)
 {
 	unsigned int len;
@@ -163,7 +154,7 @@ static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 	__be32 *seqhi;
 	struct esp_data *esp = x->data;
 
-	/* skb is pure payload to encrypt */
+	
 	err = -ENOMEM;
 
 	aead = esp->aead;
@@ -209,7 +200,7 @@ static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 	asg = esp_givreq_sg(aead, req);
 	sg = asg + sglists;
 
-	/* Fill padding... */
+	
 	tail = skb_tail_pointer(trailer);
 	if (tfclen) {
 		memset(tail, 0, tfclen);
@@ -293,7 +284,7 @@ static int esp_input_done2(struct sk_buff *skb, int err)
 		goto out;
 	}
 
-	/* ... check padding bits here. Silly. :-) */
+	
 
 	pskb_trim(skb, skb->len - alen - padlen - 2);
 	__skb_pull(skb, hlen);
@@ -301,7 +292,7 @@ static int esp_input_done2(struct sk_buff *skb, int err)
 
 	err = nexthdr[1];
 
-	/* RFC4303: Drop dummy packets without any error */
+	
 	if (err == IPPROTO_NONE)
 		err = -EINVAL;
 
@@ -377,7 +368,7 @@ static int esp6_input(struct xfrm_state *x, struct sk_buff *skb)
 
 	esph = (struct ip_esp_hdr *)skb->data;
 
-	/* Get ivec. This can be wrong, check against another impls. */
+	
 	iv = esph->enc_data;
 
 	sg_init_table(sg, nfrags);
@@ -411,19 +402,15 @@ static u32 esp6_get_mtu(struct xfrm_state *x, int mtu)
 	struct esp_data *esp = x->data;
 	u32 blksize = ALIGN(crypto_aead_blocksize(esp->aead), 4);
 	u32 align = max_t(u32, blksize, esp->padlen);
-	u32 rem;
+	unsigned int net_adj;
 
-	mtu -= x->props.header_len + crypto_aead_authsize(esp->aead);
-	rem = mtu & (align - 1);
-	mtu &= ~(align - 1);
+	if (x->props.mode != XFRM_MODE_TUNNEL)
+		net_adj = sizeof(struct ipv6hdr);
+	else
+		net_adj = 0;
 
-	if (x->props.mode != XFRM_MODE_TUNNEL) {
-		u32 padsize = ((blksize - 1) & 7) + 1;
-		mtu -= blksize - padsize;
-		mtu += min_t(u32, blksize - padsize, rem);
-	}
-
-	return mtu - 2;
+	return ((mtu - x->props.header_len - crypto_aead_authsize(esp->aead) -
+		 net_adj) & ~(align - 1)) + (net_adj - 2);
 }
 
 static void esp6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,

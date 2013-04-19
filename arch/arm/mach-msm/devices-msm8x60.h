@@ -22,6 +22,9 @@
 #define MSM_SSBI1_I2C_BUS_ID     6
 #define MSM_SSBI2_I2C_BUS_ID     7
 #define MSM_SSBI3_I2C_BUS_ID     8
+#define MSM_GSBI2_QUP_I2C_BUS_ID 9
+#define MSM_GSBI5_QUP_I2C_BUS_ID 10
+#define MSM_GSBI10_QUP_I2C_BUS_ID 11
 
 #ifdef CONFIG_SND_SOC_MSM8660_APQ
 extern struct platform_device msm_pcm;
@@ -60,6 +63,10 @@ extern struct platform_device apq8064_msm_device_vidc;
 
 extern struct platform_device msm_charm_modem;
 extern struct platform_device msm_device_tz_log;
+#ifdef CONFIG_SENSORS_MSM_ADC
+extern struct xoadc_platform_data pm8058_xoadc_pdata;
+#endif
+
 #ifdef CONFIG_HW_RANDOM_MSM
 extern struct platform_device msm_device_rng;
 #endif

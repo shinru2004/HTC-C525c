@@ -14,7 +14,7 @@
 #define __MFD_TABLA_CORE_H__
 
 #include <linux/interrupt.h>
-#include <linux/wakelock.h>
+#include <linux/pm_qos.h>
 
 #define WCD9XXX_NUM_IRQ_REGS 3
 
@@ -90,6 +90,32 @@ enum {
 };
 
 
+enum {
+	TAIKO_IRQ_SLIMBUS = 0,
+	TAIKO_IRQ_MBHC_REMOVAL,
+	TAIKO_IRQ_MBHC_SHORT_TERM,
+	TAIKO_IRQ_MBHC_PRESS,
+	TAIKO_IRQ_MBHC_RELEASE,
+	TAIKO_IRQ_MBHC_POTENTIAL,
+	TAIKO_IRQ_MBHC_INSERTION,
+	TAIKO_IRQ_BG_PRECHARGE,
+	TAIKO_IRQ_PA1_STARTUP,
+	TAIKO_IRQ_PA2_STARTUP,
+	TAIKO_IRQ_PA3_STARTUP,
+	TAIKO_IRQ_PA4_STARTUP,
+	TAIKO_IRQ_PA5_STARTUP,
+	TAIKO_IRQ_MICBIAS1_PRECHARGE,
+	TAIKO_IRQ_MICBIAS2_PRECHARGE,
+	TAIKO_IRQ_MICBIAS3_PRECHARGE,
+	TAIKO_IRQ_HPH_PA_OCPL_FAULT,
+	TAIKO_IRQ_HPH_PA_OCPR_FAULT,
+	TAIKO_IRQ_EAR_PA_OCPL_FAULT,
+	TAIKO_IRQ_HPH_L_PA_STARTUP,
+	TAIKO_IRQ_HPH_R_PA_STARTUP,
+	TAIKO_IRQ_EAR_PA_STARTUP,
+	TAIKO_NUM_IRQS,
+};
+
 enum wcd9xxx_pm_state {
 	WCD9XXX_PM_SLEEPABLE,
 	WCD9XXX_PM_AWAKE,
@@ -122,9 +148,9 @@ struct wcd9xxx {
 
 	enum wcd9xxx_pm_state pm_state;
 	struct mutex pm_lock;
-	/* pm_wq notifies change of pm_state */
+	
 	wait_queue_head_t pm_wq;
-	struct wake_lock wlock;
+	struct pm_qos_request pm_qos_req;
 	int wlock_holders;
 
 	int num_rx_port;

@@ -10,6 +10,7 @@
  */
 
 #include <linux/slab.h>
+#include <linux/export.h>
 #include <linux/types.h>
 #include <linux/scatterlist.h>
 
@@ -75,12 +76,6 @@ int mmc_card_sleepawake(struct mmc_host *host, int sleep)
 	if (err)
 		return err;
 
-	/*
-	 * If the host does not wait while the card signals busy, then we will
-	 * will have to wait the sleep/awake timeout.  Note, we cannot use the
-	 * SEND_STATUS command to poll the status because that command (and most
-	 * others) is invalid while the card sleeps.
-	 */
 	if (!(host->caps & MMC_CAP_WAIT_WHILE_BUSY))
 		mmc_delay(DIV_ROUND_UP(card->ext_csd.sa_timeout, 10000));
 
@@ -95,15 +90,6 @@ int mmc_go_idle(struct mmc_host *host)
 	int err;
 	struct mmc_command cmd = {0};
 
-	/*
-	 * Non-SPI hosts need to prevent chipselect going active during
-	 * GO_IDLE; that would put chips into SPI mode.  Remind them of
-	 * that in case of hardware that won't pull up DAT3/nCS otherwise.
-	 *
-	 * SPI hosts ignore ios.chip_select; it's managed according to
-	 * rules that must accommodate non-MMC slaves which this layer
-	 * won't even know about.
-	 */
 	if (!mmc_host_is_spi(host)) {
 		mmc_set_chip_select(host, MMC_CS_HIGH);
 		mmc_delay(1);
@@ -143,11 +129,11 @@ int mmc_send_op_cond(struct mmc_host *host, u32 ocr, u32 *rocr)
 		if (err)
 			break;
 
-		/* if we're just probing, do a single pass */
+		
 		if (ocr == 0)
 			break;
 
-		/* otherwise wait until reset completes */
+		
 		if (mmc_host_is_spi(host)) {
 			if (!(cmd.resp[0] & R1_SPI_IDLE))
 				break;
@@ -239,9 +225,6 @@ mmc_send_cxd_data(struct mmc_card *card, struct mmc_host *host,
 	struct scatterlist sg;
 	void *data_buf;
 
-	/* dma onto stack is unsafe/nonportable, but callers to this
-	 * routine normally provide temporary on-stack buffers ...
-	 */
 	data_buf = kmalloc(len, GFP_KERNEL);
 	if (data_buf == NULL)
 		return -ENOMEM;
@@ -252,11 +235,6 @@ mmc_send_cxd_data(struct mmc_card *card, struct mmc_host *host,
 	cmd.opcode = opcode;
 	cmd.arg = 0;
 
-	/* NOTE HACK:  the MMC_RSP_SPI_R1 is always correct here, but we
-	 * rely on callers to never use this with "native" calls for reading
-	 * CSD or CID.  Native versions of those commands use the R2 type,
-	 * not R1 plus a data block.
-	 */
 	cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
 
 	data.blksz = len;
@@ -268,10 +246,6 @@ mmc_send_cxd_data(struct mmc_card *card, struct mmc_host *host,
 	sg_init_one(&sg, data_buf, len);
 
 	if (opcode == MMC_SEND_CSD || opcode == MMC_SEND_CID) {
-		/*
-		 * The spec states that CSR and CID accesses have a timeout
-		 * of 64 clock cycles.
-		 */
 		data.timeout_ns = 0;
 		data.timeout_clks = 64;
 	} else
@@ -366,17 +340,6 @@ int mmc_spi_set_crc(struct mmc_host *host, int use_crc)
 	return err;
 }
 
-/**
- *	mmc_switch - modify EXT_CSD register
- *	@card: the MMC card associated with the data transfer
- *	@set: cmd set values
- *	@index: EXT_CSD register index
- *	@value: value to program into EXT_CSD register
- *	@timeout_ms: timeout (ms) for operation performed by register write,
- *                   timeout of zero implies maximum possible timeout
- *
- *	Modifies the EXT_CSD register for selected card.
- */
 int mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
 	       unsigned int timeout_ms)
 {
@@ -393,23 +356,27 @@ int mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
 		  (value << 8) |
 		  set;
 		cmd.flags = MMC_CMD_AC;
-	if (index == EXT_CSD_BKOPS_START &&
-	    card->ext_csd.raw_bkops_status < EXT_CSD_BKOPS_LEVEL_2)
+#if 1
+	if (index == EXT_CSD_BKOPS_START 
+)
 		cmd.flags |= MMC_RSP_SPI_R1 | MMC_RSP_R1;
 	else
-		cmd.flags |= MMC_RSP_SPI_R1B | MMC_RSP_R1B;
+		cmd.flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
+#else
+	cmd.flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
+#endif
 	cmd.cmd_timeout_ms = timeout_ms;
 
 	err = mmc_wait_for_cmd(card->host, &cmd, MMC_CMD_RETRIES);
 	if (err)
 		return err;
 
-	/* No need to check card status in case of BKOPS switch*/
+	
 	if (index == EXT_CSD_BKOPS_START)
 		return 0;
 
 	mmc_delay(1);
-	/* Must check status to be sure of no errors */
+	
 	do {
 		err = mmc_send_status(card, &status);
 		if (err)
@@ -418,14 +385,14 @@ int mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
 			break;
 		if (mmc_host_is_spi(card->host))
 			break;
-	} while (R1_CURRENT_STATE(status) == R1_STATE_PRG);
+	} while (!(status & R1_READY_FOR_DATA) || (R1_CURRENT_STATE(status) == R1_STATE_PRG));
 
 	if (mmc_host_is_spi(card->host)) {
 		if (status & R1_SPI_ILLEGAL_COMMAND)
 			return -EBADMSG;
 	} else {
 		if (status & 0xFDFFA000)
-			printk(KERN_WARNING "%s: unexpected status %#x after "
+			pr_warning("%s: unexpected status %#x after "
 			       "switch", mmc_hostname(card->host), status);
 		if (status & R1_SWITCH_ERROR)
 			return -EBADMSG;
@@ -452,13 +419,53 @@ int mmc_send_status(struct mmc_card *card, u32 *status)
 	if (err)
 		return err;
 
-	/* NOTE: callers are required to understand the difference
-	 * between "native" and SPI format status words!
-	 */
 	if (status)
 		*status = cmd.resp[0];
 
 	return 0;
+}
+EXPORT_SYMBOL_GPL(mmc_send_status);
+
+int mmc_bkops(struct mmc_card *card, int start)
+{
+	int err;
+	int retry = 3;
+	struct mmc_command cmd = {0};
+	BUG_ON(!card);
+	BUG_ON(!card->host);
+
+	if (start) {
+		err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+				EXT_CSD_BKOPS_START, 1, 0);
+		if (err)
+			printk(KERN_ERR "%s : %s start bkops fail err = %d\n",
+				mmc_hostname(card->host), __func__, err);
+		else
+			printk(KERN_DEBUG "%s : %s start bkops!!\n",
+				mmc_hostname(card->host), __func__);
+	} else {
+
+		do {
+			cmd.opcode = card->ext_csd.hpi_cmd;
+			if (cmd.opcode == MMC_SEND_STATUS) {
+				cmd.arg = (card->rca << 16 | 0x1);
+				cmd.flags = MMC_RSP_SPI_R2 | MMC_RSP_R1 | MMC_CMD_AC;
+			} else {
+				cmd.arg =  (card->rca << 16 | 0x1);
+				cmd.flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
+			}
+			err = mmc_wait_for_cmd(card->host, &cmd, MMC_CMD_RETRIES);
+		} while (err && retry--);
+
+		if (err || !retry) {
+			printk(KERN_DEBUG "%s : %s stop bkops fail retry %d\n",
+			mmc_hostname(card->host), __func__, retry);
+		} else {
+			printk(KERN_DEBUG "%s : %s stop bkops\n",
+			mmc_hostname(card->host), __func__);
+		}
+	}
+	return err;
 }
 
 int mmc_set_block_length(struct mmc_card *card, u32 length)
@@ -506,18 +513,14 @@ int mmc_set_block_length(struct mmc_card *card, u32 length)
 	return 0;
 }
 
-int mmc_send_write_prot_type(struct mmc_card *card, void *buf, u32 address)
+int mmc_send_write_prot_type(struct mmc_card *card, void *buf, u32 address, int len)
 {
 	struct mmc_request mrq;
 	struct mmc_command cmd;
 	struct mmc_data data;
 	struct scatterlist sg;
 	void *data_buf;
-	int len = 8;
 
-	/* dma onto stack is unsafe/nonportable, but callers to this
-	 * routine normally provide temporary on-stack buffers ...
-	 */
 	data_buf = kmalloc(len, GFP_KERNEL);
 	if (data_buf == NULL)
 		return -ENOMEM;
@@ -532,11 +535,6 @@ int mmc_send_write_prot_type(struct mmc_card *card, void *buf, u32 address)
 	cmd.opcode = MMC_SEND_WRITE_PROT_TYPE;
 	cmd.arg = address;
 
-	/* NOTE HACK:  the MMC_RSP_SPI_R1 is always correct here, but we
-	 * rely on callers to never use this with "native" calls for reading
-	 * CSD or CID.  Native versions of those commands use the R2 type,
-	 * not R1 plus a data block.
-	 */
 	cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
 
 	data.blksz = len;
@@ -576,9 +574,6 @@ mmc_send_bus_test(struct mmc_card *card, struct mmc_host *host, u8 opcode,
 	static u8 testdata_8bit[8] = { 0x55, 0xaa, 0, 0, 0, 0, 0, 0 };
 	static u8 testdata_4bit[4] = { 0x5a, 0, 0, 0 };
 
-	/* dma onto stack is unsafe/nonportable, but callers to this
-	 * routine normally provide temporary on-stack buffers ...
-	 */
 	data_buf = kmalloc(len, GFP_KERNEL);
 	if (!data_buf)
 		return -ENOMEM;
@@ -588,7 +583,7 @@ mmc_send_bus_test(struct mmc_card *card, struct mmc_host *host, u8 opcode,
 	else if (len == 4)
 		test_buf = testdata_4bit;
 	else {
-		printk(KERN_ERR "%s: Invalid bus_width %d\n",
+		pr_err("%s: Invalid bus_width %d\n",
 		       mmc_hostname(host), len);
 		kfree(data_buf);
 		return -EINVAL;
@@ -602,11 +597,6 @@ mmc_send_bus_test(struct mmc_card *card, struct mmc_host *host, u8 opcode,
 	cmd.opcode = opcode;
 	cmd.arg = 0;
 
-	/* NOTE HACK:  the MMC_RSP_SPI_R1 is always correct here, but we
-	 * rely on callers to never use this with "native" calls for reading
-	 * CSD or CID.  Native versions of those commands use the R2 type,
-	 * not R1 plus a data block.
-	 */
 	cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
 
 	data.blksz = len;
@@ -650,14 +640,10 @@ int mmc_bus_test(struct mmc_card *card, u8 bus_width)
 	else if (bus_width == MMC_BUS_WIDTH_4)
 		width = 4;
 	else if (bus_width == MMC_BUS_WIDTH_1)
-		return 0; /* no need for test */
+		return 0; 
 	else
 		return -EINVAL;
 
-	/*
-	 * Ignore errors from BUS_TEST_W.  BUS_TEST_R will fail if there
-	 * is a problem.  This improves chances that the test will work.
-	 */
 	mmc_send_bus_test(card, card->host, MMC_BUS_TEST_W, width);
 	err = mmc_send_bus_test(card, card->host, MMC_BUS_TEST_R, width);
 	return err;
@@ -667,18 +653,22 @@ int mmc_send_hpi_cmd(struct mmc_card *card, u32 *status)
 {
 	struct mmc_command cmd = {0};
 	unsigned int opcode;
-	unsigned int flags = MMC_CMD_AC;
 	int err;
+
+	if (!card->ext_csd.hpi) {
+		pr_warning("%s: Card didn't support HPI command\n",
+			   mmc_hostname(card->host));
+		return -EINVAL;
+	}
 
 	opcode = card->ext_csd.hpi_cmd;
 	if (opcode == MMC_STOP_TRANSMISSION)
-		flags |= MMC_RSP_R1B;
+		cmd.flags = MMC_RSP_R1B | MMC_CMD_AC;
 	else if (opcode == MMC_SEND_STATUS)
-		flags |= MMC_RSP_R1;
+		cmd.flags = MMC_RSP_R1 | MMC_CMD_AC;
 
 	cmd.opcode = opcode;
 	cmd.arg = card->rca << 16 | 1;
-	cmd.flags = flags;
 	cmd.cmd_timeout_ms = card->ext_csd.out_of_int_time;
 
 	err = mmc_wait_for_cmd(card->host, &cmd, 0);

@@ -31,3 +31,8 @@ config BCMDHD_WEXT
 	select WEXT_PRIV
 	help
 	  Enables WEXT support
+
+config HTC_IGNORE_SKB_ALIGNMENT
+    tristate "HTC ignore skb 32bytes aligment to avoid CMD53 fragment"
+    help
+	  Enables HTC_IGNORE_SKB_ALIGNMENT support, for QCT platform, please enable this to avoid TP drop by SDIO CMD53 fragment.

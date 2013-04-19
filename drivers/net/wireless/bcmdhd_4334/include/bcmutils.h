@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmutils.h 315959 2012-02-20 18:04:48Z $
+ * $Id: bcmutils.h 342331 2012-07-02 16:48:30Z $
  */
 
 #ifndef	_bcmutils_h_
@@ -121,6 +121,8 @@ typedef struct {
 	uint32 max_avail;    
 	uint32 max_used;     
 	uint32 queue_capacity; 
+	uint32 rtsfail;        
+	uint32 acked;          
 } pktq_counters_t;
 #endif 
 
@@ -137,7 +139,9 @@ struct pktq {
 	
 	struct pktq_prec q[PKTQ_MAX_PREC];
 #ifdef PKTQ_LOG
-	pktq_counters_t	_prec_cnt[PKTQ_MAX_PREC];		
+	pktq_counters_t	_prec_cnt[PKTQ_MAX_PREC];     
+	pktq_counters_t _prec_bytes[PKTQ_MAX_PREC];   
+	uint32 _logtime;                   
 #endif
 };
 
@@ -568,6 +572,24 @@ extern int bcm_format_ssid(char* buf, const uchar ssid[], uint ssid_len);
 #define	MAX(a, b)		(((a) > (b)) ? (a) : (b))
 #endif 
 
+
+#ifndef LIMIT_TO_RANGE
+#define LIMIT_TO_RANGE(x, min, max) \
+	((x) < (min) ? (min) : ((x) > (max) ? (max) : (x)))
+#endif 
+
+
+#ifndef LIMIT_TO_MAX
+#define LIMIT_TO_MAX(x, max) \
+	(((x) > (max) ? (max) : (x)))
+#endif 
+
+
+#ifndef LIMIT_TO_MIN
+#define LIMIT_TO_MIN(x, min) \
+	(((x) < (min) ? (min) : (x)))
+#endif 
+
 #define CEIL(x, y)		(((x) + ((y) - 1)) / (y))
 #define	ROUNDUP(x, y)		((((x) + ((y) - 1)) / (y)) * (y))
 #define	ISALIGNED(a, x)		(((uintptr)(a) & ((x) - 1)) == 0)
@@ -606,6 +628,8 @@ extern void *_bcmutils_dummy_fn;
 #define	isset(a, i)	(((const uint8 *)a)[(i) / NBBY] & (1 << ((i) % NBBY)))
 #define	isclr(a, i)	((((const uint8 *)a)[(i) / NBBY] & (1 << ((i) % NBBY))) == 0)
 #endif 
+
+#define	isbitset(a, i)	(((a) & (1 << (i))) != 0)
 
 #define	NBITS(type)	(sizeof(type) * 8)
 #define NBITVAL(nbits)	(1 << (nbits))
@@ -731,7 +755,7 @@ extern bcm_tlv_t *bcm_parse_ordered_tlvs(void *buf, int buflen, uint key);
 
 
 extern const char *bcmerrorstr(int bcmerror);
-extern bcm_tlv_t *bcm_parse_tlvs(void *buf, int buflen, uint key);
+
 
 
 typedef uint32 mbool;

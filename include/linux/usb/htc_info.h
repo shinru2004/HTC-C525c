@@ -30,7 +30,7 @@ struct usb_info {
 	int (*ldo_enable) (int enable);
 	void (*usb_mhl_switch)(bool);
 
-	/* for notification when USB is connected or disconnected */
+	
 	int connect_type_ready;
 	void (*usb_connected)(int);
 
@@ -50,7 +50,7 @@ extern int htc_usb_enable_function(char *name, int ebl);
 
 extern void htc_mode_enable(int enable);
 extern int check_htc_mode_status(void);
-extern void android_switch_adb_ums(void);
+extern void android_switch_default(void);
 extern void android_switch_htc_mode(void);
 
 #ifdef err
@@ -117,5 +117,5 @@ extern void android_switch_htc_mode(void);
 #define pr_info(fmt, args...) \
 	printk(KERN_INFO "[USB] " pr_fmt(fmt), ## args)
 
-#endif /* __HTC_INFO__ */
+#endif 
 

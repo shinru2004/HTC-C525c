@@ -19,6 +19,7 @@
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/smsc3503.h>
+#include <linux/module.h>
 #include <mach/msm_xo.h>
 
 #define SMSC3503_I2C_ADDR 0x08
@@ -34,7 +35,6 @@ struct hsic_hub {
 };
 static struct hsic_hub *smsc_hub;
 
-/* APIs for setting/clearing bits and for reading/writing values */
 static inline int hsic_hub_get_u8(struct i2c_client *client, u8 reg)
 {
 	int ret;
@@ -110,20 +110,10 @@ static int i2c_hsic_hub_probe(struct i2c_client *client,
 				     I2C_FUNC_SMBUS_WORD_DATA))
 		return -EIO;
 
-	/* CONFIG_N bit in SP_ILOCK register has to be set before changing
-	 * other registers to change default configuration of hsic hub.
-	 */
 	hsic_hub_set_bits(client, SMSC3503_SP_ILOCK, CONFIG_N);
 
-	/* Can change default configuartion like VID,PID, strings etc
-	 * by writing new values to hsic hub registers.
-	 */
 	hsic_hub_write_word_data(client, SMSC3503_VENDORID, 0x05C6);
 
-	/* CONFIG_N bit in SP_ILOCK register has to be cleared for new
-	 * values in registers to be effective after writing to
-	 * other registers.
-	 */
 	hsic_hub_clear_bits(client, SMSC3503_SP_ILOCK, CONFIG_N);
 
 	return 0;
@@ -149,9 +139,9 @@ static struct i2c_driver hsic_hub_driver = {
 	.id_table = hsic_hub_id,
 };
 
-#define HSIC_HUB_VDD_VOL_MIN	1650000 /* uV */
-#define HSIC_HUB_VDD_VOL_MAX	1950000 /* uV */
-#define HSIC_HUB_VDD_LOAD	36000	/* uA */
+#define HSIC_HUB_VDD_VOL_MIN	1650000 
+#define HSIC_HUB_VDD_VOL_MAX	1950000 
+#define HSIC_HUB_VDD_LOAD	36000	
 static int __devinit smsc_hub_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -224,9 +214,6 @@ static int __devinit smsc_hub_probe(struct platform_device *pdev)
 	}
 
 	gpio_direction_output(pdata->hub_reset, 0);
-	/* Hub reset should be asserted for minimum 2microsec
-	 * before deasserting.
-	 */
 	udelay(5);
 	gpio_direction_output(pdata->hub_reset, 1);
 

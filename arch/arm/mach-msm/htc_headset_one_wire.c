@@ -44,6 +44,7 @@ int fp_count;
 static struct file *openFile(char *path,int flag,int mode)
 {
 	mm_segment_t old_fs;
+	mutex_lock(&hi->mutex_lock);
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 	HS_LOG("Open: fp count = %d", ++fp_count);
@@ -112,6 +113,7 @@ int closeFile(struct file *fp)
 	HS_LOG("Close: fp count = %d", --fp_count);
 	filp_close(fp,NULL);
 	set_fs(old_fs);
+	mutex_unlock(&hi->mutex_lock);
 	return 0;
 }
 
@@ -119,13 +121,16 @@ static void onewire_init_work_func(struct work_struct *work)
 {
 	HS_LOG("Open %s", hi->pdata.onewire_tty_dev);
 	fp = openFile(hi->pdata.onewire_tty_dev,O_CREAT|O_RDWR|O_NONBLOCK,0666);
-	if (!fp->private_data)
-		HS_LOG("No private data");
-	else {
-		HS_LOG("Private data exist");
-		closeFile(fp);
-		return;
-	}
+	if (fp != NULL) {
+		if (!fp->private_data)
+			HS_LOG("No private data");
+		else {
+			HS_LOG("Private data exist");
+			closeFile(fp);
+			return;
+		}
+	} else
+		HS_LOG("%s, openFile is NULL pointer\n", __func__);
 	closeFile(fp);
 }
 
@@ -158,7 +163,7 @@ static int hs_read_aid(void)
 
 static int hs_1wire_query(int type)
 {
-	return 0; /*Todo*/
+	return 0; 
 }
 
 static int hs_1wire_read_key(void)
@@ -204,26 +209,31 @@ static int hs_1wire_init(void)
 	char send_data = 0xF5;
 
 	HS_LOG("[1-wire]hs_1wire_init");
-	fp = openFile(hi->pdata.onewire_tty_dev,O_CREAT|O_RDWR|O_NONBLOCK,0666);
+	fp = openFile(hi->pdata.onewire_tty_dev,O_CREAT|O_RDWR|O_SYNC|O_NONBLOCK,0666);
 	HS_LOG("Open %s", hi->pdata.onewire_tty_dev);
-	if (!fp->private_data) {
-		HS_LOG("No private data");
-		if (hi->pdata.tx_level_shift_en)
-			gpio_set_value_cansleep(hi->pdata.tx_level_shift_en, 1);
-		if (hi->pdata.uart_sw)
-			gpio_set_value_cansleep(hi->pdata.uart_sw, 0);
-		hi->aid = 0;
-		closeFile(fp);
+	if (fp != NULL) {
+		if (!fp->private_data) {
+			HS_LOG("No private data");
+			if (hi->pdata.tx_level_shift_en)
+				gpio_set_value_cansleep(hi->pdata.tx_level_shift_en, 1);
+			if (hi->pdata.uart_sw)
+				gpio_set_value_cansleep(hi->pdata.uart_sw, 0);
+			hi->aid = 0;
+			closeFile(fp);
+			return -1;
+		}
+	} else {
+		HS_LOG("%s, openFile is NULL pointer\n", __func__);
 		return -1;
 	}
 	setup_hs_tty(fp);
 	HS_LOG("Setup HS tty");
 	if (hi->pdata.tx_level_shift_en) {
-		gpio_set_value_cansleep(hi->pdata.tx_level_shift_en, 0); /*Level shift low enable*/
+		gpio_set_value_cansleep(hi->pdata.tx_level_shift_en, 0); 
 		HS_LOG("[HS]set tx_level_shift_en to 0");
 	}
 	if (hi->pdata.uart_sw) {
-		gpio_set_value_cansleep(hi->pdata.uart_sw, 1); /* 1: UART I/O to Audio Jack, 0: UART I/O to others */
+		gpio_set_value_cansleep(hi->pdata.uart_sw, 1); 
 		HS_LOG("[HS]Set uart sw = 1");
 	}
 	hi->aid = 0;
@@ -231,12 +241,7 @@ static int hs_1wire_init(void)
 	writeFile(fp,&all_zero,1);
 	hr_msleep(5);
 	writeFile(fp,&send_data,1);
-//	if (hi->pdata.remote_press) {
-//		while(gpio_get_value(hi->pdata.remote_press) == 1) {
-//			HS_LOG("[HS]Polling remote_press low");
-//		}
-//	}
-	HS_LOG("Send 0x00 0x35");
+	HS_LOG("Send 0x00 0xF5");
 	usleep(300);
 	if (hi->pdata.tx_level_shift_en)
 		gpio_set_value_cansleep(hi->pdata.tx_level_shift_en, 1);
@@ -269,7 +274,7 @@ static void hs_1wire_deinit(void)
 
 static int hs_1wire_report_type(char **string)
 {
-	const int type_num = 3; /*How many 1-wire accessories supported*/
+	const int type_num = 3; 
 	char *hs_type[] = {
 		"headset_beats_20",
 		"headset_mic_midtier",
@@ -354,8 +359,9 @@ static int htc_headset_1wire_probe(struct platform_device *pdev)
 		HS_ERR("Failed to create onewire workqueue");
 		return 0;
 	}
+	mutex_init(&hi->mutex_lock);
 	hs_1wire_register();
-	queue_delayed_work(onewire_wq, &onewire_init_work, msecs_to_jiffies(5000));
+	queue_delayed_work(onewire_wq, &onewire_init_work, msecs_to_jiffies(3000));
 	hs_notify_driver_ready(DRIVER_NAME);
 
 	HS_LOG("--------------------");

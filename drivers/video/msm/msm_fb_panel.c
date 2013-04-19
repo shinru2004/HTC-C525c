@@ -62,7 +62,6 @@ int panel_next_off(struct platform_device *pdev)
 	struct msm_fb_panel_data *next_pdata;
 	struct platform_device *next_pdev;
 
-	printk("%s\n",__func__);
 	pdata = (struct msm_fb_panel_data *)pdev->dev.platform_data;
 
 	if (pdata) {

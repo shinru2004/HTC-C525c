@@ -1,8 +1,7 @@
 #include <linux/kernel.h>
 #include <linux/gcd.h>
-#include <linux/module.h>
+#include <linux/export.h>
 
-/* Greatest common divisor */
 unsigned long gcd(unsigned long a, unsigned long b)
 {
 	unsigned long r;

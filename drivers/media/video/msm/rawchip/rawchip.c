@@ -38,25 +38,24 @@ struct yushan_int_t {
 	wait_queue_head_t yushan_wait;
 };
 
-
 static irqreturn_t yushan_irq_handler(int irq, void *dev_id){
 
 	unsigned long flags;
 
-	disable_irq_nosync(MSM_GPIO_TO_INT(rawchipCtrl->pdata->rawchip_intr0));
+	disable_irq_nosync(rawchipCtrl->pdata->rawchip_intr0);
 
-	//smp_mb();
+	
 	spin_lock_irqsave(&yushan_int.yushan_spin_lock,flags);
-	//CDBG("[CAM] %s detect INT0, interrupt:%d \n",__func__, interrupt);
-	//if (atomic_read(&start_counting))
-	//atomic_set(&yushan_int.frame_count, 1);
-	//smp_mb();
+	
+	
+	
+	
 	atomic_set(&interrupt, 1);
 	CDBG("[CAM] %s after detect INT0, interrupt:%d \n",__func__, atomic_read(&interrupt));
-	//interrupt = 1;
-	//Yushan_ISR();
-	//CDBG("[CAM] %s atomic_set\n",__func__);
-	//Yushan_ClearInterruptEvent(1);
+	
+	
+	
+	
 	wake_up(&yushan_int.yushan_wait);
 	spin_unlock_irqrestore(&yushan_int.yushan_spin_lock,flags);
 
@@ -67,7 +66,7 @@ static irqreturn_t yushan_irq_handler2(int irq, void *dev_id){
 
 	unsigned long flags;
 
-	disable_irq_nosync(MSM_GPIO_TO_INT(rawchipCtrl->pdata->rawchip_intr1));
+	disable_irq_nosync(rawchipCtrl->pdata->rawchip_intr1);
 
 	spin_lock_irqsave(&yushan_int.yushan_spin_lock,flags);
 	atomic_set(&interrupt2, 1);
@@ -133,7 +132,7 @@ int rawchip_set_size(struct rawchip_sensor_data data)
 		rawchip_init_data.y_odd_inc = data.y_odd_inc;
 		rawchip_init_data.binning_rawchip = data.binning_rawchip;
 
-		pr_info("[CAM] rawchip init spi_clk=%d ext_clk=%d lane_cnt=%d bitrate=%d %d %d %d %d\n",
+		pr_info("rawchip init spi_clk=%d ext_clk=%d lane_cnt=%d bitrate=%d %d %d %d %d\n",
 			rawchip_init_data.spi_clk, rawchip_init_data.ext_clk,
 			rawchip_init_data.lane_cnt, rawchip_init_data.bitrate,
 			rawchip_init_data.width, rawchip_init_data.height,
@@ -148,7 +147,7 @@ int rawchip_set_size(struct rawchip_sensor_data data)
 			mdelay(1);
 			gpio_direction_output(pdata->rawchip_reset, 1);
 			gpio_free(pdata->rawchip_reset);
-			/*Reset_Yushan();*/
+			
 		}
 		rawchip_init_data.use_rawchip = data.use_rawchip;
 		rc = Yushan_sensor_open_init(rawchip_init_data);
@@ -156,7 +155,7 @@ int rawchip_set_size(struct rawchip_sensor_data data)
 		return rc;
 	}
 
-	pr_info("[CAM] rawchip set size %d %d %d %d\n",
+	pr_info("rawchip set size %d %d %d %d\n",
 		data.width, data.height, data.line_length_pclk, data.frame_length_lines);
 
 	sYushanNewContextConfig.uwActivePixels = data.width;
@@ -198,21 +197,9 @@ static int rawchip_get_dxoprc_frameSetting(struct rawchip_ctrl *raw_dev, void __
 	frameSetting.xOddInc	= sImageChar_context.uwXOddInc;
 	frameSetting.yOddInc	= sImageChar_context.uwXOddInc;
 	frameSetting.binning	= sImageChar_context.bBinning;
-/*
-	pr_err("[CAM] prcDxO orientation :	%d\n",frameSetting.orientation);
-	pr_err("[CAM] prcDxO xStart : 		%d\n",frameSetting.xStart);
-	pr_err("[CAM] prcDxO yStart : 		%d\n",frameSetting.yStart);
-	pr_err("[CAM] prcDxO xEnd : 		%d\n",frameSetting.xEnd);
-	pr_err("[CAM] prcDxO yEnd : 		%d\n",frameSetting.yEnd);
-	pr_err("[CAM] prcDxO xEvenInc : 	%d\n",frameSetting.xEvenInc);
-	pr_err("[CAM] prcDxO yEvenInc : 	%d\n",frameSetting.yEvenInc);
-	pr_err("[CAM] prcDxO xOddInc : 		%d\n",frameSetting.xOddInc);
-	pr_err("[CAM] prcDxO yOddInc : 		%d\n",frameSetting.yOddInc);
-	pr_err("[CAM] prcDxO binning : 		%d\n",frameSetting.binning);
-*/
 	if (copy_from_user(&se, arg,
 			sizeof(struct rawchip_stats_event_ctrl))) {
-		pr_err("[CAM] %s, ERR_COPY_FROM_USER\n", __func__);
+		pr_err("%s, ERR_COPY_FROM_USER\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
@@ -224,13 +211,13 @@ static int rawchip_get_dxoprc_frameSetting(struct rawchip_ctrl *raw_dev, void __
 	if (copy_to_user((void *)(se.data),
 			&frameSetting,
 			se.length)) {
-			pr_err("[CAM] %s, ERR_COPY_TO_USER 1\n", __func__);
+			pr_err("%s, ERR_COPY_TO_USER 1\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
 
 	if (copy_to_user((void *)arg, &se, sizeof(se))) {
-		pr_err("[CAM] %s, ERR_COPY_TO_USER 2\n", __func__);
+		pr_err("%s, ERR_COPY_TO_USER 2\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
@@ -252,7 +239,7 @@ static int rawchip_get_interrupt(struct rawchip_ctrl *raw_dev, void __user *arg)
 
 	if (copy_from_user(&se, arg,
 			sizeof(struct rawchip_stats_event_ctrl))) {
-		pr_err("[CAM] %s, ERR_COPY_FROM_USER\n", __func__);
+		pr_err("%s, ERR_COPY_FROM_USER\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
@@ -282,13 +269,13 @@ static int rawchip_get_interrupt(struct rawchip_ctrl *raw_dev, void __user *arg)
 	if (copy_to_user((void *)(se.data),
 			&interrupt_type,
 			se.length)) {
-			pr_err("[CAM] %s, ERR_COPY_TO_USER 1\n", __func__);
+			pr_err("%s, ERR_COPY_TO_USER 1\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
 
 	if (copy_to_user((void *)arg, &se, sizeof(se))) {
-		pr_err("[CAM] %s, ERR_COPY_TO_USER 2\n", __func__);
+		pr_err("%s, ERR_COPY_TO_USER 2\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
@@ -306,7 +293,7 @@ static int rawchip_get_af_status(struct rawchip_ctrl *raw_dev, void __user *arg)
 
 	if (copy_from_user(&se, arg,
 			sizeof(struct rawchip_stats_event_ctrl))) {
-		pr_err("[CAM] %s, ERR_COPY_FROM_USER\n", __func__);
+		pr_err("%s, ERR_COPY_FROM_USER\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
@@ -317,7 +304,7 @@ static int rawchip_get_af_status(struct rawchip_ctrl *raw_dev, void __user *arg)
 	rc = Yushan_get_AFSU(&af_stats);
 
 	if (rc < 0) {
-		pr_err("[CAM] %s, Yushan_get_AFSU failed\n", __func__);
+		pr_err("%s, Yushan_get_AFSU failed\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
@@ -327,13 +314,13 @@ static int rawchip_get_af_status(struct rawchip_ctrl *raw_dev, void __user *arg)
 	if (copy_to_user((void *)(se.data),
 			&af_stats,
 			se.length)) {
-			pr_err("[CAM] %s, ERR_COPY_TO_USER 1\n", __func__);
+			pr_err("%s, ERR_COPY_TO_USER 1\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
 
 	if (copy_to_user((void *)arg, &se, sizeof(se))) {
-		pr_err("[CAM] %s, ERR_COPY_TO_USER 2\n", __func__);
+		pr_err("%s, ERR_COPY_TO_USER 2\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
@@ -354,7 +341,7 @@ static int rawchip_get_dxo_version(struct rawchip_ctrl *raw_dev, void __user *ar
 
 	if (copy_from_user(&se, arg,
 			sizeof(struct rawchip_stats_event_ctrl))) {
-		pr_err("[CAM] %s, ERR_COPY_FROM_USER\n", __func__);
+		pr_err("%s, ERR_COPY_FROM_USER\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
@@ -369,12 +356,12 @@ static int rawchip_get_dxo_version(struct rawchip_ctrl *raw_dev, void __user *ar
 	if (copy_to_user((void *)(se.data),
 			&dxoVersion,
 			se.length)) {
-			pr_err("[CAM] %s, ERR_COPY_TO_USER 1\n", __func__);
+			pr_err("%s, ERR_COPY_TO_USER 1\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
 	if (copy_to_user((void *)arg, &se, sizeof(se))) {
-		pr_err("[CAM] %s, ERR_COPY_TO_USER 2\n", __func__);
+		pr_err("%s, ERR_COPY_TO_USER 2\n", __func__);
 		rc = -EFAULT;
 		goto end;
 	}
@@ -392,20 +379,20 @@ static int rawchip_set_dxo_prc_afStrategy(struct rawchip_ctrl *raw_dev, void __u
 
 	if (copy_from_user(&se, arg,
 			sizeof(struct rawchip_stats_event_ctrl))) {
-		pr_err("[CAM] %s, ERR_COPY_FROM_USER\n", __func__);
+		pr_err("%s, ERR_COPY_FROM_USER\n", __func__);
 		return -EFAULT;
 	}
 
 	afStrategy = kmalloc(se.length, GFP_ATOMIC);
 	if (!afStrategy) {
-		pr_err("[CAM] %s %d: kmalloc failed\n", __func__,
+		pr_err("%s %d: kmalloc failed\n", __func__,
 			__LINE__);
 		return -ENOMEM;
 	}
 	if (copy_from_user(afStrategy,
 		(void __user *)(se.data),
 		se.length)) {
-		pr_err("[CAM] %s %d: copy_from_user failed\n", __func__,
+		pr_err("%s %d: copy_from_user failed\n", __func__,
 			__LINE__);
 		kfree(afStrategy);
 		return -EFAULT;
@@ -415,7 +402,7 @@ static int rawchip_set_dxo_prc_afStrategy(struct rawchip_ctrl *raw_dev, void __u
 
 	rc = Yushan_Set_AF_Strategy(*afStrategy);
 	if (rc < 0) {
-		pr_err("[CAM] %s, Yushan_Set_AF_Strategy failed\n", __func__);
+		pr_err("%s, Yushan_Set_AF_Strategy failed\n", __func__);
 		kfree(afStrategy);
 		return -EFAULT;
 	}
@@ -431,20 +418,20 @@ static int rawchip_update_aec_awb_params(struct rawchip_ctrl *raw_dev, void __us
 	CDBG("%s\n", __func__);
 	if (copy_from_user(&se, arg,
 			sizeof(struct rawchip_stats_event_ctrl))) {
-		pr_err("[CAM] %s, ERR_COPY_FROM_USER\n", __func__);
+		pr_err("%s, ERR_COPY_FROM_USER\n", __func__);
 		return -EFAULT;
 	}
 
 	update_aec_awb_params = kmalloc(se.length, GFP_ATOMIC);
 	if (!update_aec_awb_params) {
-		pr_err("[CAM] %s %d: kmalloc failed\n", __func__,
+		pr_err("%s %d: kmalloc failed\n", __func__,
 			__LINE__);
 		return -ENOMEM;
 	}
 	if (copy_from_user(update_aec_awb_params,
 		(void __user *)(se.data),
 		se.length)) {
-		pr_err("[CAM] %s %d: copy_from_user failed\n", __func__,
+		pr_err("%s %d: copy_from_user failed\n", __func__,
 			__LINE__);
 		kfree(update_aec_awb_params);
 		return -EFAULT;
@@ -470,20 +457,20 @@ static int rawchip_update_af_params(struct rawchip_ctrl *raw_dev, void __user *a
 	CDBG("%s\n", __func__);
 	if (copy_from_user(&se, arg,
 			sizeof(struct rawchip_stats_event_ctrl))) {
-		pr_err("[CAM] %s, ERR_COPY_FROM_USER\n", __func__);
+		pr_err("%s, ERR_COPY_FROM_USER\n", __func__);
 		return -EFAULT;
 	}
 
 	update_af_params = kmalloc(se.length, GFP_ATOMIC);
 	if (!update_af_params) {
-		pr_err("[CAM] %s %d: kmalloc failed\n", __func__,
+		pr_err("%s %d: kmalloc failed\n", __func__,
 			__LINE__);
 		return -ENOMEM;
 	}
 	if (copy_from_user(update_af_params,
 		(void __user *)(se.data),
 		se.length)) {
-		pr_err("[CAM] %s %d: copy_from_user failed\n", __func__,
+		pr_err("%s %d: copy_from_user failed\n", __func__,
 			__LINE__);
 		kfree(update_af_params);
 		return -EFAULT;
@@ -510,20 +497,20 @@ static int rawchip_update_3a_params(struct rawchip_ctrl *raw_dev, void __user *a
 	CDBG("%s\n", __func__);
 	if (copy_from_user(&se, arg,
 			sizeof(struct rawchip_stats_event_ctrl))) {
-		pr_err("[CAM] %s, ERR_COPY_FROM_USER\n", __func__);
+		pr_err("%s, ERR_COPY_FROM_USER\n", __func__);
 		return -EFAULT;
 	}
 
 	enable_newframe_ack = kmalloc(se.length, GFP_ATOMIC);
 	if (!enable_newframe_ack) {
-		pr_err("[CAM] %s %d: kmalloc failed\n", __func__,
+		pr_err("%s %d: kmalloc failed\n", __func__,
 			__LINE__);
 		return -ENOMEM;
 	}
 	if (copy_from_user(enable_newframe_ack,
 		(void __user *)(se.data),
 		se.length)) {
-		pr_err("[CAM] %s %d: copy_from_user failed\n", __func__,
+		pr_err("%s %d: copy_from_user failed\n", __func__,
 			__LINE__);
 		kfree(enable_newframe_ack);
 		return -EFAULT;
@@ -540,15 +527,15 @@ static int rawchip_update_3a_params(struct rawchip_ctrl *raw_dev, void __user *a
 int rawchip_power_up(const struct msm_camera_rawchip_info *pdata)
 {
 	int rc = 0;
-	CDBG("[CAM]%s\n", __func__);
+	CDBG("[CAM] %s\n", __func__);
 
 	if (pdata->camera_rawchip_power_on == NULL) {
-		pr_err("[CAM]rawchip power on platform_data didn't register\n");
+		pr_err("rawchip power on platform_data didn't register\n");
 		return -EIO;
 	}
 	rc = pdata->camera_rawchip_power_on();
 	if (rc < 0) {
-		pr_err("[CAM] rawchip power on failed\n");
+		pr_err("rawchip power on failed\n");
 		goto enable_power_on_failed;
 	}
 
@@ -559,10 +546,10 @@ int rawchip_power_up(const struct msm_camera_rawchip_info *pdata)
 #endif
 
 	if (rc < 0) {
-		pr_err("[CAM] enable MCLK failed\n");
+		pr_err("enable MCLK failed\n");
 		goto enable_mclk_failed;
 	}
-	mdelay(1); /*Mu Lee for sequence with raw chip 20120116*/
+	mdelay(1); 
 
 	rc = gpio_request(pdata->rawchip_reset, "rawchip");
 	if (rc < 0) {
@@ -571,7 +558,7 @@ int rawchip_power_up(const struct msm_camera_rawchip_info *pdata)
 	}
 	gpio_direction_output(pdata->rawchip_reset, 1);
 	gpio_free(pdata->rawchip_reset);
-	mdelay(1); /*Mu Lee for sequence with raw chip 20120116*/
+	mdelay(1); 
 
 	yushan_spi_write(0x0008, 0x7f);
 	mdelay(1);
@@ -614,7 +601,7 @@ int rawchip_power_down(const struct msm_camera_rawchip_info *pdata)
 #endif
 
 	if (rc < 0)
-		pr_err("[CAM] disable MCLK failed\n");
+		pr_err("disable MCLK failed\n");
 
 	if (pdata->camera_rawchip_power_off == NULL) {
 		pr_err("rawchip power off platform_data didn't register\n");
@@ -623,7 +610,7 @@ int rawchip_power_down(const struct msm_camera_rawchip_info *pdata)
 
 	rc = pdata->camera_rawchip_power_off();
 	if (rc < 0)
-		pr_err("[CAM] rawchip power off failed\n");
+		pr_err("rawchip power off failed\n");
 
 	return rc;
 }
@@ -675,11 +662,11 @@ void rawchip_release(void)
 {
 	struct msm_camera_rawchip_info *pdata = rawchipCtrl->pdata;
 
-	pr_info("[CAM] %s\n", __func__);
+	pr_info("%s\n", __func__);
 
 	CDBG("[CAM] rawchip free irq");
-	free_irq(MSM_GPIO_TO_INT(pdata->rawchip_intr0), 0);
-	free_irq(MSM_GPIO_TO_INT(pdata->rawchip_intr1), 0);
+	free_irq(pdata->rawchip_intr0, 0);
+	free_irq(pdata->rawchip_intr1, 0);
 
 	rawchip_power_down(pdata);
 }
@@ -714,19 +701,19 @@ open_read_id_retry:
 	atomic_set(&interrupt, 0);
 	atomic_set(&interrupt2, 0);
 
-	/*create irq*/
-	rc = request_irq(MSM_GPIO_TO_INT(pdata->rawchip_intr0), yushan_irq_handler,
+	
+	rc = request_irq(pdata->rawchip_intr0, yushan_irq_handler,
 		IRQF_TRIGGER_HIGH, "yushan_irq", 0);
 	if (rc < 0) {
 		pr_err("request irq intr0 failed\n");
 		goto open_init_failed;
 	}
 
-	rc = request_irq(MSM_GPIO_TO_INT(pdata->rawchip_intr1), yushan_irq_handler2,
+	rc = request_irq(pdata->rawchip_intr1, yushan_irq_handler2,
 		IRQF_TRIGGER_HIGH, "yushan_irq2", 0);
 	if (rc < 0) {
 		pr_err("request irq intr1 failed\n");
-		free_irq(MSM_GPIO_TO_INT(pdata->rawchip_intr0), 0);
+		free_irq(pdata->rawchip_intr0, 0);
 		goto open_init_failed;
 	}
 

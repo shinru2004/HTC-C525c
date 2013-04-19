@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: osl.h 320905 2012-03-13 15:33:25Z $
+ * $Id: osl.h 340111 2012-06-21 01:55:08Z $
  */
 
 #ifndef _osl_h_

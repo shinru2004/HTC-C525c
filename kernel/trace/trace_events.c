@@ -147,7 +147,8 @@ int trace_event_raw_init(struct ftrace_event_call *call)
 }
 EXPORT_SYMBOL_GPL(trace_event_raw_init);
 
-int ftrace_event_reg(struct ftrace_event_call *call, enum trace_reg type)
+int ftrace_event_reg(struct ftrace_event_call *call,
+		     enum trace_reg type, void *data)
 {
 	switch (type) {
 	case TRACE_REG_REGISTER:
@@ -169,6 +170,11 @@ int ftrace_event_reg(struct ftrace_event_call *call, enum trace_reg type)
 		tracepoint_probe_unregister(call->name,
 					    call->class->perf_probe,
 					    call);
+		return 0;
+	case TRACE_REG_PERF_OPEN:
+	case TRACE_REG_PERF_CLOSE:
+	case TRACE_REG_PERF_ADD:
+	case TRACE_REG_PERF_DEL:
 		return 0;
 #endif
 	}
@@ -209,7 +215,7 @@ static int ftrace_event_enable_disable(struct ftrace_event_call *call,
 				tracing_stop_cmdline_record();
 				call->flags &= ~TRACE_EVENT_FL_RECORDED_CMD;
 			}
-			call->class->reg(call, TRACE_REG_UNREGISTER);
+			call->class->reg(call, TRACE_REG_UNREGISTER, NULL);
 		}
 		break;
 	case 1:
@@ -218,7 +224,7 @@ static int ftrace_event_enable_disable(struct ftrace_event_call *call,
 				tracing_start_cmdline_record();
 				call->flags |= TRACE_EVENT_FL_RECORDED_CMD;
 			}
-			ret = call->class->reg(call, TRACE_REG_REGISTER);
+			ret = call->class->reg(call, TRACE_REG_REGISTER, NULL);
 			if (ret) {
 				tracing_stop_cmdline_record();
 				pr_info("event trace: Could not enable event "
@@ -273,9 +279,6 @@ static void put_system(struct event_subsystem *system)
 	mutex_unlock(&event_mutex);
 }
 
-/*
- * __ftrace_set_clr_event(NULL, NULL, NULL, set) will set/unset all events.
- */
 static int __ftrace_set_clr_event(const char *match, const char *sub,
 				  const char *event, int set)
 {
@@ -286,6 +289,9 @@ static int __ftrace_set_clr_event(const char *match, const char *sub,
 	list_for_each_entry(call, &ftrace_events, list) {
 
 		if (!call->name || !call->class || !call->class->reg)
+			continue;
+
+		if (call->flags & TRACE_EVENT_FL_IGNORE_ENABLE)
 			continue;
 
 		if (match &&
@@ -312,17 +318,6 @@ static int ftrace_set_clr_event(char *buf, int set)
 {
 	char *event = NULL, *sub = NULL, *match;
 
-	/*
-	 * The buf format can be <subsystem>:<event-name>
-	 *  *:<event-name> means any event by that name.
-	 *  :<event-name> is the same.
-	 *
-	 *  <subsystem>:* means all events in that subsystem
-	 *  <subsystem>: means the same.
-	 *
-	 *  <name> (no ':') means all events in a subsystem with
-	 *  the name <name> or any event that matches <name>
-	 */
 
 	match = strsep(&buf, ":");
 	if (buf) {
@@ -339,25 +334,12 @@ static int ftrace_set_clr_event(char *buf, int set)
 	return __ftrace_set_clr_event(match, sub, event, set);
 }
 
-/**
- * trace_set_clr_event - enable or disable an event
- * @system: system name to match (NULL for any system)
- * @event: event name to match (NULL for all events, within system)
- * @set: 1 to enable, 0 to disable
- *
- * This is a way for other parts of the kernel to enable or disable
- * event recording.
- *
- * Returns 0 on success, -EINVAL if the parameters do not match any
- * registered events.
- */
 int trace_set_clr_event(const char *system, const char *event, int set)
 {
 	return __ftrace_set_clr_event(NULL, system, event, set);
 }
 EXPORT_SYMBOL_GPL(trace_set_clr_event);
 
-/* 128 should be much more than enough */
 #define EVENT_BUF_SIZE		127
 
 static ssize_t
@@ -408,10 +390,6 @@ t_next(struct seq_file *m, void *v, loff_t *pos)
 	(*pos)++;
 
 	list_for_each_entry_continue(call, &ftrace_events, list) {
-		/*
-		 * The ftrace subsystem is for showing formats only.
-		 * They can not be enabled or disabled via the event files.
-		 */
 		if (call->class && call->class->reg)
 			return call;
 	}
@@ -515,20 +493,11 @@ event_enable_write(struct file *filp, const char __user *ubuf, size_t cnt,
 		   loff_t *ppos)
 {
 	struct ftrace_event_call *call = filp->private_data;
-	char buf[64];
 	unsigned long val;
 	int ret;
 
-	if (cnt >= sizeof(buf))
-		return -EINVAL;
-
-	if (copy_from_user(&buf, ubuf, cnt))
-		return -EFAULT;
-
-	buf[cnt] = 0;
-
-	ret = strict_strtoul(buf, 10, &val);
-	if (ret < 0)
+	ret = kstrtoul_from_user(ubuf, cnt, 10, &val);
+	if (ret)
 		return ret;
 
 	ret = tracing_update_buffers();
@@ -571,16 +540,8 @@ system_enable_read(struct file *filp, char __user *ubuf, size_t cnt,
 		if (system && strcmp(call->class->system, system->name) != 0)
 			continue;
 
-		/*
-		 * We need to find out if all the events are set
-		 * or if all events or cleared, or if we have
-		 * a mixture.
-		 */
 		set |= (1 << !!(call->flags & TRACE_EVENT_FL_ENABLED));
 
-		/*
-		 * If we have a mixture, no need to look further.
-		 */
 		if (set == 3)
 			break;
 	}
@@ -601,19 +562,10 @@ system_enable_write(struct file *filp, const char __user *ubuf, size_t cnt,
 	struct event_subsystem *system = filp->private_data;
 	const char *name = NULL;
 	unsigned long val;
-	char buf[64];
 	ssize_t ret;
 
-	if (cnt >= sizeof(buf))
-		return -EINVAL;
-
-	if (copy_from_user(&buf, ubuf, cnt))
-		return -EFAULT;
-
-	buf[cnt] = 0;
-
-	ret = strict_strtoul(buf, 10, &val);
-	if (ret < 0)
+	ret = kstrtoul_from_user(ubuf, cnt, 10, &val);
+	if (ret)
 		return ret;
 
 	ret = tracing_update_buffers();
@@ -623,10 +575,6 @@ system_enable_write(struct file *filp, const char __user *ubuf, size_t cnt,
 	if (val != 0 && val != 1)
 		return -EINVAL;
 
-	/*
-	 * Opening of "enable" adds a ref count to system,
-	 * so the name is safe to use.
-	 */
 	if (system)
 		name = system->name;
 
@@ -674,7 +622,7 @@ static void *f_next(struct seq_file *m, void *v, loff_t *pos)
 		return field;
 
 	case FORMAT_PRINTFMT:
-		/* all done */
+		
 		return NULL;
 	}
 
@@ -694,7 +642,7 @@ static void *f_start(struct seq_file *m, loff_t *pos)
 	loff_t l = 0;
 	void *p;
 
-	/* Start by showing the header */
+	
 	if (!*pos)
 		return (void *)FORMAT_HEADER;
 
@@ -731,13 +679,6 @@ static int f_show(struct seq_file *m, void *v)
 
 	field = v;
 
-	/*
-	 * Smartly shows the array type(except dynamic array).
-	 * Normal:
-	 *	field:TYPE VAR
-	 * If TYPE := TYPE[LEN], it is shown:
-	 *	field:TYPE VAR[LEN]
-	 */
 	array_descriptor = strchr(field->type, '[');
 
 	if (!strncmp(field->type, "__data_loc", 10))
@@ -873,11 +814,11 @@ static int subsystem_open(struct inode *inode, struct file *filp)
 	if (!inode->i_private)
 		goto skip_search;
 
-	/* Make sure the system still exists */
+	
 	mutex_lock(&event_mutex);
 	list_for_each_entry(system, &event_subsystems, list) {
 		if (system == inode->i_private) {
-			/* Don't open systems with no events */
+			
 			if (!system->nr_events) {
 				system = NULL;
 				break;
@@ -1093,7 +1034,7 @@ event_subsystem_dir(const char *name, struct dentry *d_events)
 	struct event_subsystem *system;
 	struct dentry *entry;
 
-	/* First see if we did not already create this dir */
+	
 	list_for_each_entry(system, &event_subsystems, list) {
 		if (strcmp(system->name, name) == 0) {
 			system->nr_events++;
@@ -1101,7 +1042,7 @@ event_subsystem_dir(const char *name, struct dentry *d_events)
 		}
 	}
 
-	/* need to create new entry */
+	
 	system = kmalloc(sizeof(*system), GFP_KERNEL);
 	if (!system) {
 		pr_warning("No memory to create event subsystem %s\n",
@@ -1162,10 +1103,6 @@ event_create_dir(struct ftrace_event_call *call, struct dentry *d_events,
 	struct list_head *head;
 	int ret;
 
-	/*
-	 * If the trace point header did not define TRACE_SYSTEM
-	 * then the system would be called "TRACE_SYSTEM".
-	 */
 	if (strcmp(call->class->system, TRACE_SYSTEM) != 0)
 		d_events = event_subsystem_dir(call->class->system, d_events);
 
@@ -1176,7 +1113,7 @@ event_create_dir(struct ftrace_event_call *call, struct dentry *d_events,
 		return -1;
 	}
 
-	if (call->class->reg)
+	if (call->class->reg && !(call->flags & TRACE_EVENT_FL_IGNORE_ENABLE))
 		trace_create_file("enable", 0644, call->dir, call,
 				  enable);
 
@@ -1186,10 +1123,6 @@ event_create_dir(struct ftrace_event_call *call, struct dentry *d_events,
 		 		  id);
 #endif
 
-	/*
-	 * Other events may have the same class. Only update
-	 * the fields if they are not already defined.
-	 */
 	head = trace_get_fields(call);
 	if (list_empty(head)) {
 		ret = call->class->define_fields(call);
@@ -1218,7 +1151,7 @@ __trace_add_event_call(struct ftrace_event_call *call, struct module *mod,
 	struct dentry *d_events;
 	int ret;
 
-	/* The linker may leave blanks */
+	
 	if (!call->name)
 		return -EINVAL;
 
@@ -1244,7 +1177,6 @@ __trace_add_event_call(struct ftrace_event_call *call, struct module *mod,
 	return ret;
 }
 
-/* Add an additional event_call dynamically */
 int trace_add_event_call(struct ftrace_event_call *call)
 {
 	int ret;
@@ -1276,9 +1208,6 @@ static void remove_subsystem_dir(const char *name)
 	}
 }
 
-/*
- * Must be called under locking both of event_mutex and trace_event_mutex.
- */
 static void __trace_remove_event_call(struct ftrace_event_call *call)
 {
 	ftrace_event_enable_disable(call, 0);
@@ -1291,7 +1220,6 @@ static void __trace_remove_event_call(struct ftrace_event_call *call)
 	remove_subsystem_dir(call->class->system);
 }
 
-/* Remove an event_call */
 void trace_remove_event_call(struct ftrace_event_call *call)
 {
 	mutex_lock(&event_mutex);
@@ -1310,10 +1238,6 @@ void trace_remove_event_call(struct ftrace_event_call *call)
 
 static LIST_HEAD(ftrace_module_file_list);
 
-/*
- * Modules must own their file_operations to keep up with
- * reference counting.
- */
 struct ftrace_module_file_ops {
 	struct list_head		list;
 	struct module			*mod;
@@ -1328,12 +1252,6 @@ trace_create_file_ops(struct module *mod)
 {
 	struct ftrace_module_file_ops *file_ops;
 
-	/*
-	 * This is a bit of a PITA. To allow for correct reference
-	 * counting, modules must "own" their file_operations.
-	 * To do this, we allocate the file operations that will be
-	 * used in the event directory.
-	 */
 
 	file_ops = kmalloc(sizeof(*file_ops), GFP_KERNEL);
 	if (!file_ops)
@@ -1394,7 +1312,7 @@ static void trace_module_remove_events(struct module *mod)
 		}
 	}
 
-	/* Now free the file_operations */
+	
 	list_for_each_entry(file_ops, &ftrace_module_file_list, list) {
 		if (file_ops->mod == mod)
 			break;
@@ -1404,10 +1322,6 @@ static void trace_module_remove_events(struct module *mod)
 		kfree(file_ops);
 	}
 
-	/*
-	 * It is safest to reset the ring buffer if the module being unloaded
-	 * registered any events.
-	 */
 	if (found)
 		tracing_reset_current_online_cpus();
 	up_write(&trace_event_mutex);
@@ -1437,7 +1351,7 @@ static int trace_module_notify(struct notifier_block *self,
 {
 	return 0;
 }
-#endif /* CONFIG_MODULES */
+#endif 
 
 static struct notifier_block trace_module_nb = {
 	.notifier_call = trace_module_notify,
@@ -1491,7 +1405,7 @@ static __init int event_trace_init(void)
 	if (!d_events)
 		return 0;
 
-	/* ring buffer internal formats */
+	
 	trace_create_file("header_page", 0444, d_events,
 			  ring_buffer_print_page_header,
 			  &ftrace_show_header_fops);
@@ -1572,9 +1486,6 @@ static __init int event_test_thread(void *unused)
 	return 0;
 }
 
-/*
- * Do various things that may trigger events.
- */
 static __init void event_test_stuff(void)
 {
 	struct task_struct *test_thread;
@@ -1584,10 +1495,6 @@ static __init void event_test_stuff(void)
 	kthread_stop(test_thread);
 }
 
-/*
- * For every trace event defined, we will test each trace point separately,
- * and then by groups, and finally all trace points.
- */
 static __init void event_trace_self_tests(void)
 {
 	struct ftrace_event_call *call;
@@ -1598,16 +1505,10 @@ static __init void event_trace_self_tests(void)
 
 	list_for_each_entry(call, &ftrace_events, list) {
 
-		/* Only test those that have a probe */
+		
 		if (!call->class || !call->class->probe)
 			continue;
 
-/*
- * Testing syscall events here is pretty useless, but
- * we still do it if configured. But this is time consuming.
- * What we really need is a user thread to perform the
- * syscalls as we test.
- */
 #ifndef CONFIG_EVENT_TRACE_TEST_SYSCALLS
 		if (call->class->system &&
 		    strcmp(call->class->system, "syscalls") == 0)
@@ -1616,10 +1517,6 @@ static __init void event_trace_self_tests(void)
 
 		pr_info("Testing event %s: ", call->name);
 
-		/*
-		 * If an event is already enabled, someone is using
-		 * it and the self test should not be on.
-		 */
 		if (call->flags & TRACE_EVENT_FL_ENABLED) {
 			pr_warning("Enabled event during self test!\n");
 			WARN_ON_ONCE(1);
@@ -1633,13 +1530,13 @@ static __init void event_trace_self_tests(void)
 		pr_cont("OK\n");
 	}
 
-	/* Now test at the sub system level */
+	
 
 	pr_info("Running tests on trace event systems:\n");
 
 	list_for_each_entry(system, &event_subsystems, list) {
 
-		/* the ftrace system is special, skip it */
+		
 		if (strcmp(system->name, "ftrace") == 0)
 			continue;
 
@@ -1662,7 +1559,7 @@ static __init void event_trace_self_tests(void)
 		pr_cont("OK\n");
 	}
 
-	/* Test with all events enabled */
+	
 
 	pr_info("Running tests on all trace events:\n");
 	pr_info("Testing all events: ");
@@ -1675,7 +1572,7 @@ static __init void event_trace_self_tests(void)
 
 	event_test_stuff();
 
-	/* reset sysname */
+	
 	ret = __ftrace_set_clr_event(NULL, NULL, NULL, 0);
 	if (WARN_ON_ONCE(ret)) {
 		pr_warning("error disabling all events\n");

@@ -9,10 +9,12 @@
  */
 
 #include <linux/types.h>
+#include <linux/kconfig.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
 #include <linux/init.h>
 #include <linux/delay.h>
+#include <linux/export.h>
 #include <linux/acpi.h>
 #include <linux/dmi.h>
 #include "pci-quirks.h"
@@ -711,11 +713,27 @@ static int handshake(void __iomem *ptr, u32 mask, u32 done,
 	return -ETIMEDOUT;
 }
 
-bool usb_is_intel_switchable_xhci(struct pci_dev *pdev)
+#define PCI_DEVICE_ID_INTEL_LYNX_POINT_XHCI	0x8C31
+
+bool usb_is_intel_ppt_switchable_xhci(struct pci_dev *pdev)
 {
 	return pdev->class == PCI_CLASS_SERIAL_USB_XHCI &&
 		pdev->vendor == PCI_VENDOR_ID_INTEL &&
 		pdev->device == PCI_DEVICE_ID_INTEL_PANTHERPOINT_XHCI;
+}
+
+/* The Intel Lynx Point chipset also has switchable ports. */
+bool usb_is_intel_lpt_switchable_xhci(struct pci_dev *pdev)
+{
+	return pdev->class == PCI_CLASS_SERIAL_USB_XHCI &&
+		pdev->vendor == PCI_VENDOR_ID_INTEL &&
+		pdev->device == PCI_DEVICE_ID_INTEL_LYNX_POINT_XHCI;
+}
+
+bool usb_is_intel_switchable_xhci(struct pci_dev *pdev)
+{
+	return usb_is_intel_ppt_switchable_xhci(pdev) ||
+		usb_is_intel_lpt_switchable_xhci(pdev);
 }
 EXPORT_SYMBOL_GPL(usb_is_intel_switchable_xhci);
 
@@ -740,6 +758,19 @@ EXPORT_SYMBOL_GPL(usb_is_intel_switchable_xhci);
 void usb_enable_xhci_ports(struct pci_dev *xhci_pdev)
 {
 	u32		ports_available;
+
+	/* Don't switchover the ports if the user hasn't compiled the xHCI
+	 * driver.  Otherwise they will see "dead" USB ports that don't power
+	 * the devices.
+	 */
+	if (!IS_ENABLED(CONFIG_USB_XHCI_HCD)) {
+		dev_warn(&xhci_pdev->dev,
+				"CONFIG_USB_XHCI_HCD is turned off, "
+				"defaulting to EHCI.\n");
+		dev_warn(&xhci_pdev->dev,
+				"USB 3.0 devices will work at USB 2.0 speeds.\n");
+		return;
+	}
 
 	ports_available = 0xffffffff;
 	/* Write USB3_PSSEN, the USB 3.0 Port SuperSpeed Enable
@@ -768,6 +799,13 @@ void usb_enable_xhci_ports(struct pci_dev *xhci_pdev)
 			"to xHCI: 0x%x\n", ports_available);
 }
 EXPORT_SYMBOL_GPL(usb_enable_xhci_ports);
+
+void usb_disable_xhci_ports(struct pci_dev *xhci_pdev)
+{
+	pci_write_config_dword(xhci_pdev, USB_INTEL_USB3_PSSEN, 0x0);
+	pci_write_config_dword(xhci_pdev, USB_INTEL_XUSB2PR, 0x0);
+}
+EXPORT_SYMBOL_GPL(usb_disable_xhci_ports);
 
 /**
  * PCI Quirks for xHCI.
@@ -824,9 +862,13 @@ static void __devinit quirk_usb_handoff_xhci(struct pci_dev *pdev)
 		}
 	}
 
-	/* Disable any BIOS SMIs */
-	writel(XHCI_LEGACY_DISABLE_SMI,
-			base + ext_cap_offset + XHCI_LEGACY_CONTROL_OFFSET);
+	val = readl(base + ext_cap_offset + XHCI_LEGACY_CONTROL_OFFSET);
+	/* Mask off (turn off) any enabled SMIs */
+	val &= XHCI_LEGACY_DISABLE_SMI;
+	/* Mask all SMI events bits, RW1C */
+	val |= XHCI_LEGACY_SMI_EVENTS;
+	/* Disable any BIOS SMIs and clear all SMI events*/
+	writel(val, base + ext_cap_offset + XHCI_LEGACY_CONTROL_OFFSET);
 
 	if (usb_is_intel_switchable_xhci(pdev))
 		usb_enable_xhci_ports(pdev);
@@ -871,7 +913,17 @@ static void __devinit quirk_usb_early_handoff(struct pci_dev *pdev)
 	 */
 	if (pdev->vendor == 0x184e)	/* vendor Netlogic */
 		return;
+	if (pdev->class != PCI_CLASS_SERIAL_USB_UHCI &&
+			pdev->class != PCI_CLASS_SERIAL_USB_OHCI &&
+			pdev->class != PCI_CLASS_SERIAL_USB_EHCI &&
+			pdev->class != PCI_CLASS_SERIAL_USB_XHCI)
+		return;
 
+	if (pci_enable_device(pdev) < 0) {
+		dev_warn(&pdev->dev, "Can't enable PCI device, "
+				"BIOS handoff failed.\n");
+		return;
+	}
 	if (pdev->class == PCI_CLASS_SERIAL_USB_UHCI)
 		quirk_usb_handoff_uhci(pdev);
 	else if (pdev->class == PCI_CLASS_SERIAL_USB_OHCI)
@@ -880,5 +932,7 @@ static void __devinit quirk_usb_early_handoff(struct pci_dev *pdev)
 		quirk_usb_disable_ehci(pdev);
 	else if (pdev->class == PCI_CLASS_SERIAL_USB_XHCI)
 		quirk_usb_handoff_xhci(pdev);
+	pci_disable_device(pdev);
 }
-DECLARE_PCI_FIXUP_FINAL(PCI_ANY_ID, PCI_ANY_ID, quirk_usb_early_handoff);
+DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_ANY_ID, PCI_ANY_ID,
+			PCI_CLASS_SERIAL_USB, 8, quirk_usb_early_handoff);

@@ -343,12 +343,6 @@ media_entity_create_link(struct media_entity *source, u16 source_pad,
 	struct media_link *backlink;
 
 	BUG_ON(source == NULL || sink == NULL);
-
-	/* HTC_START (klockwork issue)*/
-	if (source == NULL || sink == NULL)
-		return -ENOMEM;
-	/* HTC_END */
-
 	BUG_ON(source_pad >= source->num_pads);
 	BUG_ON(sink_pad >= sink->num_pads);
 

@@ -5,6 +5,8 @@
 # Rewritten to use lists instead of if-statements.
 #
 
+# GPIO must come after pinctrl as gpios may need to mux pins etc
+obj-y				+= pinctrl/
 obj-y				+= gpio/
 obj-$(CONFIG_PCI)		+= pci/
 obj-$(CONFIG_PARISC)		+= parisc/
@@ -53,6 +55,7 @@ obj-$(CONFIG_MTD)		+= mtd/
 obj-$(CONFIG_SPI)		+= spi/
 obj-$(CONFIG_SPMI)		+= spmi/
 obj-$(CONFIG_SLIMBUS)		+= slimbus/
+obj-y				+= hsi/
 obj-y				+= net/
 obj-$(CONFIG_ATM)		+= atm/
 obj-$(CONFIG_FUSION)		+= message/
@@ -73,7 +76,6 @@ obj-$(CONFIG_USB_OTG_UTILS)	+= usb/
 obj-$(CONFIG_USB)		+= usb/
 obj-$(CONFIG_PCI)		+= usb/
 obj-$(CONFIG_USB_GADGET)	+= usb/
-obj-$(CONFIG_DIAG_CHAR)         += char/diag/
 obj-$(CONFIG_SERIO)		+= input/serio/
 obj-$(CONFIG_GAMEPORT)		+= input/gameport/
 obj-$(CONFIG_INPUT)		+= input/
@@ -87,7 +89,6 @@ obj-$(CONFIG_POWER_SUPPLY)	+= power/
 obj-$(CONFIG_HWMON)		+= hwmon/
 obj-$(CONFIG_THERMAL)		+= thermal/
 obj-$(CONFIG_WATCHDOG)		+= watchdog/
-obj-$(CONFIG_PHONE)		+= telephony/
 obj-$(CONFIG_MD)		+= md/
 obj-$(CONFIG_BT)		+= bluetooth/
 obj-$(CONFIG_ACCESSIBILITY)	+= accessibility/
@@ -98,7 +99,7 @@ obj-$(CONFIG_EISA)		+= eisa/
 obj-y				+= lguest/
 obj-$(CONFIG_CPU_FREQ)		+= cpufreq/
 obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
-obj-$(CONFIG_MMC)		+= mmc/
+obj-y				+= mmc/
 obj-$(CONFIG_MEMSTICK)		+= memstick/
 obj-y				+= leds/
 obj-$(CONFIG_SWITCH)		+= switch/
@@ -122,10 +123,23 @@ obj-$(CONFIG_VLYNQ)		+= vlynq/
 obj-$(CONFIG_STAGING)		+= staging/
 obj-y				+= platform/
 obj-y				+= ieee802154/
+obj-y				+= felica/
 #common clk code
 obj-y				+= clk/
 
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
+obj-$(CONFIG_NFC)		+= nfc/
+obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
+obj-$(CONFIG_REMOTEPROC)	+= remoteproc/
+obj-$(CONFIG_RPMSG)		+= rpmsg/
+
+# Virtualization drivers
+obj-$(CONFIG_VIRT_DRIVERS)	+= virt/
+obj-$(CONFIG_HYPERV)		+= hv/
+
+obj-$(CONFIG_PM_DEVFREQ)	+= devfreq/
 
 #MobiCore
 obj-$(CONFIG_MOBICORE_SUPPORT)  += gud/
+
+obj-$(CONFIG_MSM_QDSS)		+= coresight/

@@ -17,6 +17,15 @@
 
 struct rpm_regulator;
 
+enum rpm_regulator_voltage_corner {
+	RPM_REGULATOR_CORNER_RETENTION = 1,
+	RPM_REGULATOR_CORNER_SVS_KRAIT,
+	RPM_REGULATOR_CORNER_SVS_SOC,
+	RPM_REGULATOR_CORNER_NORMAL,
+	RPM_REGULATOR_CORNER_TURBO,
+	RPM_REGULATOR_CORNER_SUPER_TURBO,
+};
+
 #if defined(CONFIG_MSM_RPM_REGULATOR_SMD) || defined(CONFIG_MSM_RPM_REGULATOR)
 
 struct rpm_regulator *rpm_regulator_get(struct device *dev, const char *supply);
@@ -50,6 +59,6 @@ static inline int rpm_regulator_set_voltage(struct rpm_regulator *regulator,
 
 static inline int __init rpm_regulator_smd_driver_init(void) { return 0; }
 
-#endif /* CONFIG_MSM_RPM_REGULATOR_SMD */
+#endif 
 
 #endif

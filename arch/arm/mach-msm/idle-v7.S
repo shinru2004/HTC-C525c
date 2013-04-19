@@ -18,6 +18,7 @@
 #include <linux/linkage.h>
 #include <linux/threads.h>
 #include <asm/assembler.h>
+#include <mach/msm_iomap.h>
 
 #include "idle.h"
 #include "idle-macros.S"
@@ -28,36 +29,51 @@
 #endif
 
 /*
-PHY define in msm_iomap-8930.h, VIRT define in msm_iomap.h
+PHY define in msm_iomap-8960.h, VIRT define in msm_iomap.h
 The counters to check kernel exit for both cpu's
-kernel foot print for cpu0  		: phy 0x8F9F1000 : virt 0xFA705000
-kernel foot print for cpu1  		: phy 0x8F9F1004 : virt 0xFA705004
-kernel exit counter from cpu0		: phy 0x8F9F1008 : virt 0xFA705008
-kernel exit counter from cpu1		: phy 0x8F9F100C : virt 0xFA70500C
-msm_pm_boot_entry			: phy 0x8F9F1010 : virt 0xFA705010
-msm_pm_boot_vector			: phy 0x8F9F1014 : virt 0xFA705014
-reset vector for cpu0(init)		: phy 0x8F9F1018 : virt 0xFA705018
-reset vector for cpu1(init)		: phy 0x8F9F101C : virt 0xFA70501C
-cpu0 reset vector address		: phy 0x8F9F1020 : virt 0xFA705020
-cpu1 reset vector address		: phy 0x8F9F1024 : virt 0xFA705024
-cpu0 reset vector address value		: phy 0x8F9F1028 : virt 0xFA705028
-cpu1 reset vector address value		: phy 0x8F9F102C : virt 0xFA70502C
-cpu0 frequency				: phy 0x8F9F1030 : virt 0xFA705030
-cpu1 frequency				: phy 0x8F9F1034 : virt 0xFA705034
-L2 frequency				: phy 0x8F9F1038 : virt 0xFA705038
-acpuclk_set_rate footprint cpu0		: phy 0x8F9F103C : virt 0xFA70503C
-acpuclk_set_rate footprint cpu1		: phy 0x8F9F1040 : virt 0xFA705040
+kernel foot print for cpu0  		: phy 0x8F1F1000 : virt 0xFB600000
+kernel foot print for cpu1  		: phy 0x8F1F1004 : virt 0xFB600004
+kernel foot print for cpu2 		: phy 0x8F1F1008 : virt 0xFB600008
+kernel foot print for cpu3 		: phy 0x8F1F100C : virt 0xFB60000C
+kernel exit counter from cpu0		: phy 0x8F1F1010 : virt 0xFB600010
+kernel exit counter from cpu1		: phy 0x8F1F1014 : virt 0xFB600014
+kernel exit counter from cpu2		: phy 0x8F1F1018 : virt 0xFB600018
+kernel exit counter from cpu3		: phy 0x8F1F101C : virt 0xFB60001C
+msm_pm_boot_entry       		: phy 0x8F1F1020 : virt 0xFB600020
+msm_pm_boot_vector      		: phy 0x8F1F1024 : virt 0xFB600024
+reset vector for cpu0(init)		: phy 0x8F1F1028 : virt 0xFB600028
+reset vector for cpu1(init)     	: phy 0x8F1F102C : virt 0xFB60002C
+reset vector for cpu2(init)		: phy 0x8F1F1030 : virt 0xFB600030
+reset vector for cpu3(init)	        : phy 0x8F1F1034 : virt 0xFB600034
+cpu0 reset vector address		: phy 0x8F1F1038 : virt 0xFB600038
+cpu1 reset vector address		: phy 0x8F1F103C : virt 0xFB60003C
+cpu2 reset vector address       	: phy 0x8F1F1040 : virt 0xFB600040
+cpu3 reset vector address	        : phy 0x8F1F1044 : virt 0xFB600044
+cpu0 reset vector address value 	: phy 0x8F1F1048 : virt 0xFB600048
+cpu1 reset vector address value		: phy 0x8F1F104C : virt 0xFB60004C
+cpu2 reset vector address value	     	: phy 0x8F1F1050 : virt 0xFB600050
+cpu3 reset vector address value	        : phy 0x8F1F1054 : virt 0xFB600054
+cpu0 frequency          		: phy 0x8F1F1058 : virt 0xFB600058
+cpu1 frequency          		: phy 0x8F1F105C : virt 0xFB60005C
+cpu2 frequency                         	: phy 0x8F1F1060 : virt 0xFB600060
+cpu3 frequency                          : phy 0x8F1F1064 : virt 0xFB600064
+L2 frequency              		: phy 0x8F1F1068 : virt 0xFB600068
+acpuclk_set_rate footprint cpu0 	: phy 0x8F1F106C : virt 0xFB60006C
+acpuclk_set_rate footprint cpu1       	: phy 0x8F1F1070 : virt 0xFB600070
+acpuclk_set_rate footprint cpu2         : phy 0x8F1F1074 : virt 0xFB600074
+acpuclk_set_rate footprint cpu3         : phy 0x8F1F1078 : virt 0xFB600078
+io footprint cpu 0			: phy 0x8F1F107C-0x8F1F1084 : virt 0xFB60007C-0xFB600084
+io footprint cpu 1			: phy 0x8F1F1088-0x8F1F1090 : virt 0xFB600088-0xFB600090
+io footprint cpu 2			: phy 0x8F1F1094-0x8F1F109C : virt 0xFB600094-0xFB60009C
+io footprint cpu 3			: phy 0x8F1F10A0-0x8F1F10A8 : virt 0xFB6000A0-0xFB6000A8
 */
-
-#define MSM_KERNEL_FOOTPRINT_PHYS	0x8F9F1000
-#define MSM_KERNEL_FOOTPRINT_VIRT	0xFA705000
 
 #define CPU_FOOT_PRINT_MAGIC			0xACBDFE00
 #define CPU_FOOT_PRINT_BASE_CPU0_PHY	(MSM_KERNEL_FOOTPRINT_PHYS + 0)
 #define CPU_FOOT_PRINT_BASE_CPU0_VIRT	(MSM_KERNEL_FOOTPRINT_VIRT + 0)
-#define CPU0_EXIT_COUNT_PHYS	(MSM_KERNEL_FOOTPRINT_PHYS + 0x8)
-#define CPU_RESET_VECTOR_PHYS		(MSM_KERNEL_FOOTPRINT_PHYS + 0x20)
-#define CPU_RESET_VECTOR_VALUE_PHYS	(MSM_KERNEL_FOOTPRINT_PHYS + 0x28)
+#define CPU0_EXIT_COUNT_PHYS	(MSM_KERNEL_FOOTPRINT_PHYS + 0x10)
+#define CPU_RESET_VECTOR_PHYS		(MSM_KERNEL_FOOTPRINT_PHYS + 0x38)
+#define CPU_RESET_VECTOR_VALUE_PHYS	(MSM_KERNEL_FOOTPRINT_PHYS + 0x48)
 
 /* r0 already has the cpu number */
 .macro set_cpu_foot_print_virt, x
@@ -65,13 +81,13 @@ acpuclk_set_rate footprint cpu1		: phy 0x8F9F1040 : virt 0xFA705040
 	ldr	r5, =cur_cpu
 	ldr	r5, [r5]
 	ldr	r6, =CPU_FOOT_PRINT_BASE_CPU0_VIRT
-	ldr	r7, =(CPU_FOOT_PRINT_MAGIC | \x)	/* make status number. */
-	str	r7, [r6, r5, LSL #2]
+	mov	r7, #\x
+	strb	r7, [r6, r5, LSL #2] /* write footprint x, x must be 1 byte*/
 	dsb						/* ensure data are written. */
 	ldmfd	sp!, {r5-r7}
 .endm
 
-#define CPU_RESET_VECTOR_CPU0_BASE		(MSM_KERNEL_FOOTPRINT_VIRT + 0x18)
+#define CPU_RESET_VECTOR_CPU0_BASE		(MSM_KERNEL_FOOTPRINT_VIRT + 0x28)
 /* Store reset factor for two cpu*/
 .macro store_reset_vector_for_each_cpu
 	stmfd	sp!, {r5-r7}
@@ -94,7 +110,7 @@ ENTRY(msm_arch_idle)
 	movt	r3, #0x510F
 	cmp	r2, r1
 	cmpne	r3, r1
-	bne	go_wfi
+	/* bne	go_wfi */
 
 	mrs	r0, cpsr
 	cpsid	if
@@ -104,9 +120,10 @@ ENTRY(msm_arch_idle)
 	mcr	p15, 7, r2, c15, c0, 5
 	isb
 
-go_wfi:
+/* go_wfi: */
+	dsb
 	wfi
-	bne	wfi_done
+	/* bne	wfi_done */
 	mcr	p15, 7, r1, c15, c0, 5
 	isb
 	msr	cpsr_c, r0
@@ -133,8 +150,10 @@ ENTRY(msm_pm_collapse)
 #if (NR_CPUS >= 2)
 	mrc	p15, 0, r1, c0, c0, 5	/* MPIDR */
 	ands	r1, r1, #15		/* What CPU am I */
-	ldr     r2, =cur_cpu
-	str     r1, [r2]                /* store current cpu number for later use. */
+
+	ldr	r2, =cur_cpu
+	str	r1, [r2]			/* store current cpu number for later use. */
+
 	mov	r2, #CPU_SAVED_STATE_SIZE
 	mul	r1, r1, r2
 	add	r0, r0, r1
@@ -196,6 +215,7 @@ skip:
 	ldr	r1, =SCM_CMD_TERMINATE_PC
 	ldr	r2, =msm_pm_flush_l2_flag
 	ldr	r2, [r2]
+	dsb
 	bl	scm_call_atomic1
 #else
 	mrc     p15, 0, r4, c1, c0, 0    /* read current CR    */
@@ -206,6 +226,7 @@ skip:
 
 	SUSPEND_8x25_L2
 	SET_SMP_COHERENCY OFF
+	dsb
 	wfi
 	DELAY_8x25 300
 
@@ -244,15 +265,17 @@ ENTRY(msm_pm_collapse_exit)
 	mov     r1, #'A'
 	str     r1, [r0, #0x00C]
 #endif
+	mrc	p15, 0, r2, c0, c0, 5	/* MPIDR */
+	ands	r2, r2, #15		/* What CPU am I */
 	ldr	r1, =CPU0_EXIT_COUNT_PHYS
-	ldr     r2, [r1]
-	add 	r2, r2, #1
-	str	r2, [r1]
+	ldr     r3, [r1, r2, LSL #2]
+	add 	r3, r3, #1
+	str	r3, [r1]
 	dsb
 
 	ldr	r1, =CPU_FOOT_PRINT_BASE_CPU0_PHY
-	ldr	r2, =0xACBDFE04	/* make status number. */
-	str	r2, [r1]
+	mov	r3, #4
+	strb	r3, [r1, r2, LSL #2] /* write footprint 4 */
 	dsb
 
 	ldr     r1, =msm_saved_state_phys
@@ -351,8 +374,8 @@ ENTRY(msm_pm_boot_entry)
 	and     r0, r0, #15              /* what CPU am I                  */
 
 	ldr	r1, =CPU_FOOT_PRINT_BASE_CPU0_PHY
-	ldr	r2, =0xACBDFE02	/* make status number. */
-	str	r2, [r1, r0, LSL #2]
+	mov	r2, #2              /* write footprint 2 */
+	strb	r2, [r1, r0, LSL #2]
 	dsb						/* ensure data are written. */
 
 	ldr     r1, =msm_pm_boot_vector
@@ -362,8 +385,8 @@ ENTRY(msm_pm_boot_entry)
 	sub     r1, r1, r2
 
 	ldr	r3, =CPU_FOOT_PRINT_BASE_CPU0_PHY
-	ldr	r2, =0xACBDFE03	/* make status number. */
-	str	r2, [r3, r0, LSL #2]
+	mov	r2, #3
+	strb	r2, [r3, r0, LSL #2]     /* write footprint 3 */
 	dsb
 
 	add     r1, r1, r0, LSL #2       /* locate boot vector for our cpu */
@@ -437,3 +460,4 @@ l2x0_saved_ctrl_reg_val:
 
 cur_cpu:
 	.space	4 /* store current cpu number */
+

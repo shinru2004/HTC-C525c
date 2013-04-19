@@ -35,20 +35,18 @@ do { \
 } while (0)
 
 #ifdef DDL_MSG_LOG
-/*HTC_START*/
 #define DDL_MSG_LOW(x...)    printk(KERN_INFO "[VID] " x)
 #define DDL_MSG_MED(x...)    printk(KERN_INFO "[VID] " x)
 #define DDL_MSG_HIGH(x...)   printk(KERN_INFO "[VID] " x)
-/*HTC_END*/
 #else
 #define DDL_MSG_LOW(x...)
 #define DDL_MSG_MED(x...)
 #define DDL_MSG_HIGH(x...)
 #endif
-/*HTC_START*/
+
 #define DDL_MSG_ERROR(x...)  printk(KERN_INFO "[VID] " x)
 #define DDL_MSG_FATAL(x...)  printk(KERN_INFO "[VID] " x)
-/*HTC_END*/
+
 #define DDL_ALIGN_SIZE(sz, guard_bytes, align_mask) \
 	(((u32)(sz) + guard_bytes) & align_mask)
 #define DDL_ADDR_IS_ALIGNED(addr, align_bytes) \
@@ -64,7 +62,8 @@ do { \
 #define DDL_GET_ALIGNED_VITUAL(x)   ((x).align_virtual_addr)
 #define DDL_KILO_BYTE(x)   ((x)*1024)
 #define DDL_MEGA_BYTE(x)   ((x)*1024*1024)
-#define DDL_FRAMERATE_SCALE(x)            ((x) * 1000)
+#define DDL_FRAMERATE_SCALE_FACTOR      (1000)
+#define DDL_FRAMERATE_SCALE(x)          ((x) * DDL_FRAMERATE_SCALE_FACTOR)
 
 #define DDL_MIN(x, y)  ((x < y) ? x : y)
 #define DDL_MAX(x, y)  ((x > y) ? x : y)

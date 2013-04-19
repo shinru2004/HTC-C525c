@@ -1,4 +1,4 @@
-
+source "drivers/video/msm/sii9234/Kconfig"
 source "drivers/video/msm/vidc/Kconfig"
 
 config FB_MSM
@@ -14,6 +14,11 @@ config FB_MSM
 	  Support for MSM Framebuffer.
 
 if FB_MSM
+
+config FB_MSM_CABC
+	bool "Use CABC"
+	depends on FB_MSM
+	default n
 
 config FB_MSM_BACKLIGHT
 	bool "Support for backlight control"
@@ -84,6 +89,16 @@ config FB_MSM_MDP40
 	  Support for MSM MDP HW revision 4.0
 	  Say Y here if this is msm7x30 variant platform.
 
+config FB_MSM_MDSS
+	bool "MDSS HW"
+	---help---
+	The Mobile Display Sub System (MDSS) driver supports devices which
+	contain MDSS hardware block.
+
+	The MDSS driver implements frame buffer interface to provide access to
+	the display hardware and provide a way for users to display graphics
+	on connected display panels.
+
 config FB_MSM_MDP_NONE
 	bool "MDP HW None"
 	---help---
@@ -123,6 +138,11 @@ config MSM_ACL_ENABLE
 
 config MSM_CABC_VIDEO_ENHANCE
 	bool "Use different CABC setting for Video"
+	depends on FB_MSM
+	default n
+
+config MSM_AUTOBL_ENABLE
+	bool "ACL Service"
 	depends on FB_MSM
 	default n
 
@@ -206,6 +226,11 @@ config FB_MSM_MIPI_DSI_ORISE
         bool
         select FB_MSM_MIPI_DSI
         default n
+
+config FB_MSM_MIPI_DSI_HIMAX
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
 
 config FB_MSM_MIPI_DSI_NT35516
 	bool
@@ -307,6 +332,11 @@ config FB_MSM_LVDS_CHIMEI_WXGA
 	select FB_MSM_LVDS
 	default n
 
+config FB_MSM_LVDS_FRC_FHD
+	bool
+	select FB_MSM_LVDS
+	default n
+
 config FB_MSM_MIPI_TOSHIBA_VIDEO_WVGA_PT
 	bool
 	select FB_MSM_MIPI_DSI_TOSHIBA
@@ -340,6 +370,16 @@ config FB_MSM_MIPI_ORISE_VIDEO_720P_PT
 config FB_MSM_MIPI_ORISE_CMD_720P_PT
 	bool
 	select FB_MSM_MIPI_DSI_ORISE
+	default n
+
+config FB_MSM_MIPI_HIMAX_VIDEO_720P_PT
+	bool
+	select FB_MSM_MIPI_DSI_HIMAX
+	default n
+
+config FB_MSM_MIPI_HIMAX_CMD_720P_PT
+	bool
+	select FB_MSM_MIPI_DSI_HIMAX
 	default n
 
 config FB_MSM_MIPI_RENESAS_VIDEO_FWVGA_PT
@@ -399,6 +439,16 @@ config FB_MSM_MIPI_SIMULATOR_VIDEO
 	bool
 	select FB_MSM_MIPI_DSI_SIMULATOR
 	default n
+
+config FB_MSM_NO_MDP_PIPE_CTRL
+	depends on FB_MSM_OVERLAY
+	default y
+	bool "Do not use mdp_pipe_ctrl"
+	---help---
+	  Saying 'Y' here obsoletes the mdp_pipe_ctrl function,
+	  which was used to control mdp-related clocks. MDP4 vsync-driven
+	  screen updates will use a different clock control mechanism if
+	  this is selected.
 
 config FB_MSM_OVERLAY0_WRITEBACK
 	depends on FB_MSM_OVERLAY
@@ -500,6 +550,15 @@ config FB_MSM_LVDS_CHIMEI_WXGA_PANEL
         ---help---
           Support for LVDS Chimei WXGA(1366x768) panel
 
+config FB_MSM_LVDS_FRC_FHD_PANEL
+	bool "LVDS FRC FHD Panel"
+	select FB_MSM_LVDS_FRC_FHD
+	---help---
+	  Support for LVDS Frc FHD(1920x1080) panel
+	  FRC(Frame Rate Converter) uses LVDS as input
+	  interface. It is treated as a HDMI panel with
+	  1920x1080 resolution.
+
 config FB_MSM_TRY_MDDI_CATCH_LCDC_PRISM
 	depends on FB_MSM_LCDC_HW
 	bool "MDDI Panel Auto Detect + LCDC Prism WVGA"
@@ -529,6 +588,8 @@ config FB_MSM_MIPI_PANEL_DETECT
 	select FB_MSM_MIPI_NT35510_CMD_WVGA_PT
 	select FB_MSM_MIPI_ORISE_VIDEO_720P_PT
 	select FB_MSM_MIPI_ORISE_CMD_720P_PT
+	select FB_MSM_MIPI_HIMAX_VIDEO_720P_PT
+	select FB_MSM_MIPI_HIMAX_CMD_720P_PT
 	select FB_MSM_MIPI_NT35516_VIDEO_QHD_PT
 	select FB_MSM_MIPI_NT35516_CMD_QHD_PT
 	select FB_MSM_MIPI_SIMULATOR_VIDEO
@@ -578,6 +639,7 @@ config FB_MSM_LCDC_MIPI_PANEL_AUTO_DETECT
 config FB_MSM_LVDS_MIPI_PANEL_DETECT
 	bool "LVDS + MIPI Panel Auto Detect"
 	select FB_MSM_LVDS_CHIMEI_WXGA
+	select FB_MSM_LVDS_FRC_FHD
 	select FB_MSM_MIPI_TOSHIBA_VIDEO_WVGA_PT
 	select FB_MSM_MIPI_TOSHIBA_VIDEO_WSVGA_PT
 	select FB_MSM_MIPI_TOSHIBA_VIDEO_WUXGA
@@ -590,6 +652,8 @@ config FB_MSM_LVDS_MIPI_PANEL_DETECT
 	select FB_MSM_MIPI_NT35510_CMD_WVGA_PT
 	select FB_MSM_MIPI_ORISE_VIDEO_720P_PT
 	select FB_MSM_MIPI_ORISE_CMD_720P_PT
+	select FB_MSM_MIPI_HIMAX_VIDEO_720P_PT
+	select FB_MSM_MIPI_HIMAX_CMD_720P_PT
 	select FB_MSM_MIPI_SIMULATOR_VIDEO
 	select FB_MSM_MIPI_CHIMEI_WXGA
 	select FB_MSM_MIPI_CHIMEI_WUXGA
@@ -653,6 +717,14 @@ config FB_MSM_MIPI_ORISE_VIDEO_720P_PT_PANEL
 config FB_MSM_MIPI_ORISE_CMD_720P_PT_PANEL
 	bool "MIPI ORISE CMD 720P PT Panel"
 	select FB_MSM_MIPI_ORISE_CMD_720P_PT
+
+config FB_MSM_MIPI_HIMAX_VIDEO_720P_PT_PANEL
+	bool "MIPI HIMAX VIDEO 720P PT Panel"
+	select FB_MSM_MIPI_HIMAX_VIDEO_720P_PT
+
+config FB_MSM_MIPI_HIMAX_CMD_720P_PT_PANEL
+	bool "MIPI HIMAX CMD 720P PT Panel"
+	select FB_MSM_MIPI_HIMAX_CMD_720P_PT
 
 config FB_MSM_MIPI_RENESAS_VIDEO_FWVGA_PT_PANEL
 	bool "MIPI Renesas Video FWVGA PT Panel"
@@ -812,18 +884,9 @@ config FB_MSM_HDMI_MSM_PANEL_CEC_SUPPORT
 	  Support for HDMI CEC Feature
 	  Choose to enable CEC
 
-config FB_MSM_HDMI_MHL_9244
+config FB_MSM_HDMI_MHL
 	depends on FB_MSM_HDMI_MSM_PANEL
-	bool 'SI_MHL 9244 support'
-	default n
-	---help---
-	  Support the HDMI to MHL conversion.
-	  MHL (Mobile High-Definition Link) technology
-	  uses USB connector to output HDMI content
-
-config FB_MSM_HDMI_MHL_8334
-	depends on FB_MSM_HDMI_MSM_PANEL
-	bool 'SI_MHL 8334 support '
+	bool 'HDMI to MHL support'
 	default n
 	---help---
 	  Support the HDMI to MHL conversion.
@@ -931,4 +994,28 @@ config FB_MSM_EBI2_PANEL_DETECT
 	default n
 	---help---
 	  Support for EBI2 panel auto detect
+
+config MSM_ALT_DSI_ESCAPE_CLOCK
+	bool "Change DSI escape clock to byte clock"
+	default n
+	---help---
+	  Changing DSI escape clock source from PXO to byte clock to add
+	  more flexibility.
+
+config FB_MSM_ESD_WORKAROUND
+	bool "Panel ESD workaround"
+	default n
+	---help---
+	  Read panel power mode to determine if we need to recover display
+	  from ESD issue.
+
+config FB_MSM_CABC_LEVEL_CONTROL
+	bool "CABC LEVEL CONTROL"
+	default n
+	---help---
+	  Use attribute to switch CABC level.
+
+if FB_MSM_MDSS
+	source "drivers/video/msm/mdss/Kconfig"
+endif
 endif

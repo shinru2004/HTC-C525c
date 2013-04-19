@@ -6,12 +6,9 @@
 #endif
 
 #include <asm/processor.h>
+
 extern int msm_krait_need_wfe_fixup;
 
-/*
- * sev and wfe are ARMv6K extensions.  Uniprocessor ARMv6 may not have the K
- * extensions, so when running on UP, we have to patch these instructions away.
- */
 #define ALT_SMP(smp, up)					\
 	"9998:	" smp "\n"					\
 	"	.pushsection \".alt.smp.init\", \"a\"\n"	\
@@ -21,11 +18,6 @@ extern int msm_krait_need_wfe_fixup;
 
 #ifdef CONFIG_THUMB2_KERNEL
 #define SEV		ALT_SMP("sev.w", "nop.w")
-/*
- * Both instructions given to the ALT_SMP macro need to be the same size, to
- * allow the SMP_ON_UP fixups to function correctly. Hence the explicit encoding
- * specifications.
- */
 #define WFE()		ALT_SMP(		\
 	"wfe.w",				\
 	"nop.w"					\
@@ -35,20 +27,15 @@ extern int msm_krait_need_wfe_fixup;
 #define WFE()		ALT_SMP("wfe", "nop")
 #endif
 
-/*
- * The fixup involves disabling FIQs during execution of the WFE instruction.
- * This could potentially lead to deadlock if a thread is trying to acquire a
- * spinlock which is being released from an FIQ. This should not be a problem
- * because FIQs are handled by the secure environment and do not directly
- * manipulate spinlocks.
- */
 #ifdef CONFIG_MSM_KRAIT_WFE_FIXUP
 #define WFE_SAFE(fixup, tmp) 				\
 "	mrs	" tmp ", cpsr\n"			\
 "	cmp	" fixup ", #0\n"			\
+"	dsb\n"						\
 "	wfeeq\n"					\
 "	beq	10f\n"					\
 "	cpsid   f\n"					\
+"	dsb\n"						\
 "	mrc	p15, 7, " fixup ", c15, c0, 5\n"	\
 "	bic	" fixup ", " fixup ", #0x10000\n"	\
 "	mcr	p15, 7, " fixup ", c15, c0, 5\n"	\
@@ -79,17 +66,6 @@ static inline void dsb_sev(void)
 }
 
 #ifndef CONFIG_ARM_TICKET_LOCKS
-/*
- * ARMv6 Spin-locking.
- *
- * We exclusively read the old value.  If it is zero, we may have
- * won the lock, so we try exclusively storing it.  A memory barrier
- * is required after we get a lock, and before we release it, because
- * V6 CPUs are assumed to have weakly ordered memory.
- *
- * Unlocked value: 0
- * Locked value: 1
- */
 
 #define arch_spin_is_locked(x)		((x)->lock != 0)
 #define arch_spin_unlock_wait(lock) \
@@ -150,23 +126,6 @@ static inline void arch_spin_unlock(arch_spinlock_t *lock)
 	dsb_sev();
 }
 #else
-/*
- * ARM Ticket spin-locking
- *
- * Ticket locks are conceptually two parts, one indicating the current head of
- * the queue, and the other indicating the current tail. The lock is acquired
- * by atomically noting the tail and incrementing it by one (thus adding
- * ourself to the queue and noting our position), then waiting until the head
- * becomes equal to the the initial value of the tail.
- *
- * Unlocked value: 0
- * Locked value: now_serving != next_ticket
- *
- *   31             17  16    15  14                    0
- *  +----------------------------------------------------+
- *  |  now_serving          |     next_ticket            |
- *  +----------------------------------------------------+
- */
 
 #define TICKET_SHIFT	16
 #define TICKET_BITS	16
@@ -174,12 +133,18 @@ static inline void arch_spin_unlock(arch_spinlock_t *lock)
 
 #define arch_spin_lock_flags(lock, flags) arch_spin_lock(lock)
 
+static inline int arch_spin_is_locked(arch_spinlock_t *lock)
+{
+        unsigned long tmp = ACCESS_ONCE(lock->lock);
+        return (((tmp >> TICKET_SHIFT) ^ tmp) & TICKET_MASK) != 0;
+}
+
 static inline void arch_spin_lock(arch_spinlock_t *lock)
 {
 	unsigned long tmp, ticket, next_ticket;
 	unsigned long fixup = msm_krait_need_wfe_fixup;
 
-	/* Grab the next ticket and wait for it to be "served" */
+	
 	__asm__ __volatile__(
 "1:	ldrex	%[ticket], [%[lockaddr]]\n"
 "	uadd16	%[next_ticket], %[ticket], %[val1]\n"
@@ -200,14 +165,15 @@ static inline void arch_spin_lock(arch_spinlock_t *lock)
 	  [next_ticket]"=&r" (next_ticket), [fixup]"+r" (fixup)
 	: [lockaddr]"r" (&lock->lock), [val1]"r" (1)
 	: "cc");
-	smp_mb();
+	dsb();
+	BUG_ON(!arch_spin_is_locked(lock));
 }
 
 static inline int arch_spin_trylock(arch_spinlock_t *lock)
 {
 	unsigned long tmp, ticket, next_ticket;
 
-	/* Grab lock if now_serving == next_ticket and access is exclusive */
+	
 	__asm__ __volatile__(
 "	ldrex	%[ticket], [%[lockaddr]]\n"
 "	ror	%[tmp], %[ticket], #16\n"
@@ -220,8 +186,11 @@ static inline int arch_spin_trylock(arch_spinlock_t *lock)
 	  [next_ticket]"=&r" (next_ticket)
 	: [lockaddr]"r" (&lock->lock), [val1]"r" (1)
 	: "cc");
-	if (!tmp)
-		smp_mb();
+	if (!tmp) {
+		dsb();
+		BUG_ON(!arch_spin_is_locked(lock));
+	}
+
 	return !tmp;
 }
 
@@ -230,8 +199,9 @@ static inline void arch_spin_unlock(arch_spinlock_t *lock)
 	unsigned long ticket, tmp;
 
 	smp_mb();
+	BUG_ON(!arch_spin_is_locked(lock));
 
-	/* Bump now_serving by 1 */
+	
 	__asm__ __volatile__(
 "1:	ldrex	%[ticket], [%[lockaddr]]\n"
 "	uadd16	%[ticket], %[ticket], %[serving1]\n"
@@ -248,7 +218,7 @@ static inline void arch_spin_unlock_wait(arch_spinlock_t *lock)
 {
 	unsigned long ticket, tmp, fixup = msm_krait_need_wfe_fixup;
 
-	/* Wait for now_serving == next_ticket */
+	
 	__asm__ __volatile__(
 #ifdef CONFIG_CPU_32v6K
 "	cmpne	%[lockaddr], %[lockaddr]\n"
@@ -270,12 +240,6 @@ static inline void arch_spin_unlock_wait(arch_spinlock_t *lock)
 	: "cc");
 }
 
-static inline int arch_spin_is_locked(arch_spinlock_t *lock)
-{
-	unsigned long tmp = ACCESS_ONCE(lock->lock);
-	return (((tmp >> TICKET_SHIFT) ^ tmp) & TICKET_MASK) != 0;
-}
-
 static inline int arch_spin_is_contended(arch_spinlock_t *lock)
 {
 	unsigned long tmp = ACCESS_ONCE(lock->lock);
@@ -283,13 +247,6 @@ static inline int arch_spin_is_contended(arch_spinlock_t *lock)
 }
 #endif
 
-/*
- * RWLOCKS
- *
- *
- * Write locks are easy - we just set bit 31.  When unlocking, we can
- * just write zero since the lock is exclusively held.
- */
 
 static inline void arch_write_lock(arch_rwlock_t *rw)
 {
@@ -344,21 +301,8 @@ static inline void arch_write_unlock(arch_rwlock_t *rw)
 	dsb_sev();
 }
 
-/* write_can_lock - would write_trylock() succeed? */
 #define arch_write_can_lock(x)		((x)->lock == 0)
 
-/*
- * Read locks are a bit more hairy:
- *  - Exclusively load the lock value.
- *  - Increment it.
- *  - Store new lock value if positive, and we still own this location.
- *    If the value is negative, we've already failed.
- *  - If we failed to store the value, we want a negative result.
- *  - If we failed, try again.
- * Unlocking is similarly hairy.  We may have multiple read locks
- * currently active.  However, we know we won't have any write
- * locks.
- */
 static inline void arch_read_lock(arch_rwlock_t *rw)
 {
 	unsigned long tmp, tmp2, fixup = msm_krait_need_wfe_fixup;
@@ -415,7 +359,6 @@ static inline int arch_read_trylock(arch_rwlock_t *rw)
 	return tmp2 == 0;
 }
 
-/* read_can_lock - would read_trylock() succeed? */
 #define arch_read_can_lock(x)		((x)->lock < 0x80000000)
 
 #define arch_read_lock_flags(lock, flags) arch_read_lock(lock)
@@ -425,4 +368,4 @@ static inline int arch_read_trylock(arch_rwlock_t *rw)
 #define arch_read_relax(lock)	cpu_relax()
 #define arch_write_relax(lock)	cpu_relax()
 
-#endif /* __ASM_SPINLOCK_H */
+#endif 

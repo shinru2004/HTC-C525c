@@ -27,22 +27,17 @@
 #include <mach/subsystem_restart.h>
 #include <mach/subsystem_notif.h>
 #include <mach/socinfo.h>
+#include <mach/restart.h>
 #include <mach/msm_smsm.h>
 #include <mach/board_htc.h>
-#include <mach/restart.h>
-
-#if defined(CONFIG_MACH_K2_UL) && !defined(CONFIG_MSM_MODEM_SSR_ENABLE)
-#include <mach/msm_iomap.h>
-#endif
 
 #include "smd_private.h"
 #include "modem_notifier.h"
 #include "ramdump.h"
 
-#define MODULE_NAME			"modem_8960"
+#define MODULE_NAME		"modem_8960"
 
 static int crash_shutdown;
-
 #if defined (CONFIG_MSM_MODEM_SSR_ENABLE)
 static int enable_modem_ssr = 1;
 #else
@@ -79,17 +74,13 @@ static void log_modem_sfr(void)
 
 static void restart_modem(void)
 {
-	if (get_restart_level() == RESET_SOC)
-		ssr_set_restart_reason(
-			"modem fatal: Modem SW Watchdog Bite!");
-
 	log_modem_sfr();
 	subsystem_restart("modem");
 }
 
 static void smsm_state_cb(void *data, uint32_t old_state, uint32_t new_state)
 {
-	/* Ignore if we're the one that set SMSM_RESET */
+	
 	if (crash_shutdown)
 		return;
 
@@ -97,8 +88,8 @@ static void smsm_state_cb(void *data, uint32_t old_state, uint32_t new_state)
 		pr_err("Probable fatal error on the modem.\n");
 		if (smd_smsm_erase_efs()) {
 			pr_err("Unrecoverable efs, need to reboot and erase"
-				"modem_st1/st2 partitions...\n");
-			arm_pm_restart(RESTART_MODE_ERASE_EFS, "force-hard");
+					"modem_st1/st2 partitions...\n");
+			msm_restart(RESTART_MODE_ERASE_EFS, "force-hard");
 		} else {
 			restart_modem();
 		}
@@ -110,10 +101,6 @@ static int modem_shutdown(const struct subsys_data *subsys)
 	void __iomem *q6_fw_wdog_addr;
 	void __iomem *q6_sw_wdog_addr;
 
-	/*
-	 * Disable the modem watchdog since it keeps running even after the
-	 * modem is shutdown.
-	 */
 	q6_fw_wdog_addr = ioremap_nocache(Q6_FW_WDOG_ENABLE, 4);
 	if (!q6_fw_wdog_addr)
 		return -ENOMEM;
@@ -138,6 +125,8 @@ static int modem_shutdown(const struct subsys_data *subsys)
 	return 0;
 }
 
+#define MODEM_WDOG_CHECK_TIMEOUT_MS 10000
+
 static int modem_powerup(const struct subsys_data *subsys)
 {
 	pil_force_boot("modem_fw");
@@ -153,7 +142,6 @@ void modem_crash_shutdown(const struct subsys_data *subsys)
 	smsm_reset_modem(SMSM_RESET);
 }
 
-/* FIXME: Get address, size from PIL */
 static struct ramdump_segment modemsw_segments[] = {
 	{0x89000000, 0x8D400000 - 0x89000000},
 };
@@ -209,18 +197,20 @@ out:
 
 static irqreturn_t modem_wdog_bite_irq(int irq, void *dev_id)
 {
-#if defined(CONFIG_MACH_K2_UL) && !defined(CONFIG_MSM_MODEM_SSR_ENABLE)
-	writel(0x1, MSM_APCS_GCC_BASE+0x8);
-#endif
-
 	switch (irq) {
 
 	case Q6SW_WDOG_EXPIRED_IRQ:
 		pr_err("Watchdog bite received from modem software!\n");
+		if (get_restart_level() == RESET_SOC)
+			ssr_set_restart_reason(
+					"modem fatal: Modem SW Watchdog Bite!");
 		restart_modem();
 		break;
 	case Q6FW_WDOG_EXPIRED_IRQ:
 		pr_err("Watchdog bite received from modem firmware!\n");
+		if (get_restart_level() == RESET_SOC)
+			ssr_set_restart_reason(
+					"modem fatal: Modem FW Watchdog Bite!");
 		restart_modem();
 		break;
 	break;
@@ -258,7 +248,8 @@ static int enable_modem_ssr_set(const char *val, struct kernel_param *kp)
 }
 
 module_param_call(enable_modem_ssr, enable_modem_ssr_set, param_get_int,
-			&enable_modem_ssr, S_IRUGO | S_IWUSR);
+		&enable_modem_ssr, S_IRUGO | S_IWUSR);
+
 
 static int modem_subsystem_restart_init(void)
 {

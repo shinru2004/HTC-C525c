@@ -432,8 +432,14 @@
 
 #define SITAR_A_CDC_TX1_MUX_CTL			(0x223)
 #define SITAR_A_CDC_TX1_MUX_CTL__POR			(0x00000008)
-#define SITAR_A_CDC_TX1_CLK_FS_CTL			(0x224)
-#define SITAR_A_CDC_TX1_CLK_FS_CTL__POR			(0x00000003)
+#define SITAR_A_CDC_TX1_CLK_FS_CTL                      (0x00000224)
+#define SITAR_A_CDC_TX1_CLK_FS_CTL__POR                 (0x00000003)
+#define SITAR_A_CDC_TX2_CLK_FS_CTL                      (0x0000022C)
+#define SITAR_A_CDC_TX2_CLK_FS_CTL__POR                 (0x00000003)
+#define SITAR_A_CDC_TX3_CLK_FS_CTL                      (0x00000234)
+#define SITAR_A_CDC_TX3_CLK_FS_CTL__POR                 (0x00000003)
+#define SITAR_A_CDC_TX4_CLK_FS_CTL                      (0x0000023C)
+#define SITAR_A_CDC_TX4_CLK_FS_CTL__POR                 (0x00000003)
 #define SITAR_A_CDC_TX1_DMIC_CTL			(0x225)
 #define SITAR_A_CDC_TX1_DMIC_CTL__POR			(0x00000000)
 #define SITAR_A_CDC_TX2_MUX_CTL                 (0x22B)
@@ -479,18 +485,18 @@
 #define SITAR_A_CDC_RX3_B4_CTL__POR			 (0x00000000)
 
 #define SITAR_A_CDC_RX1_B5_CTL                  (0x000002B4)
-#define SITAR_A_CDC_RX1_B5_CTL__POR			 (0x00000060)
+#define SITAR_A_CDC_RX1_B5_CTL__POR			 (0x00000078)
 #define SITAR_A_CDC_RX2_B5_CTL                  (0x000002BC)
-#define SITAR_A_CDC_RX2_B5_CTL__POR			 (0x00000060)
+#define SITAR_A_CDC_RX2_B5_CTL__POR			 (0x00000078)
 #define SITAR_A_CDC_RX3_B5_CTL                  (0x000002C4)
-#define SITAR_A_CDC_RX3_B5_CTL__POR			 (0x00000060)
+#define SITAR_A_CDC_RX3_B5_CTL__POR			 (0x00000078)
 
 #define SITAR_A_CDC_RX1_B6_CTL                  (0x000002B5)
-#define SITAR_A_CDC_RX1_B6_CTL__POR			 (0x00000000)
+#define SITAR_A_CDC_RX1_B6_CTL__POR			 (0x00000080)
 #define SITAR_A_CDC_RX2_B6_CTL                  (0x000002BD)
-#define SITAR_A_CDC_RX2_B6_CTL__POR			 (0x00000000)
+#define SITAR_A_CDC_RX2_B6_CTL__POR			 (0x00000080)
 #define SITAR_A_CDC_RX3_B6_CTL                  (0x000002C5)
-#define SITAR_A_CDC_RX3_B6_CTL__POR			 (0x00000000)
+#define SITAR_A_CDC_RX3_B6_CTL__POR			 (0x00000080)
 
 
 #define SITAR_A_CDC_RX1_VOL_CTL_B1_CTL			(0x2B6)
@@ -780,13 +786,11 @@
 #define SITAR_A_CDC_MBHC_DEBUG_CTL__POR			(0x00000000)
 #define SITAR_A_CDC_MBHC_SPARE			(0x3DF)
 #define SITAR_A_CDC_MBHC_SPARE__POR			(0x00000000)
-/* SLIMBUS Slave Registers */
 #define SITAR_SLIM_PGD_PORT_INT_EN0			 (0x30)
 #define SITAR_SLIM_PGD_PORT_INT_STATUS0                 (0x34)
 #define SITAR_SLIM_PGD_PORT_INT_CLR0			(0x38)
 #define SITAR_SLIM_PGD_PORT_INT_SOURCE0                 (0x60)
 
-/* Macros for Packing Register Writes into a U32 */
 #define SITAR_PACKED_REG_SIZE sizeof(u32)
 
 #define SITAR_CODEC_PACK_ENTRY(reg, mask, val) ((val & 0xff)|\

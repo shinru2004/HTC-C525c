@@ -169,7 +169,6 @@ static void do_read_data(struct work_struct *work);
 #define RESTART_NORMAL 0
 #define RESTART_PEND 1
 
-/* State for remote ep following restart */
 #define RESTART_QUOTA_ABORT  1
 
 static LIST_HEAD(xprt_info_list);
@@ -226,7 +225,6 @@ static struct msm_ipc_routing_table_entry *alloc_routing_table_entry(
 	return rt_entry;
 }
 
-/*Please take routing_table_lock before calling this function*/
 static int add_routing_table_entry(
 	struct msm_ipc_routing_table_entry *rt_entry)
 {
@@ -240,7 +238,6 @@ static int add_routing_table_entry(
 	return 0;
 }
 
-/*Please take routing_table_lock before calling this function*/
 static struct msm_ipc_routing_table_entry *lookup_routing_table(
 	uint32_t node_id)
 {
@@ -477,14 +474,11 @@ static struct msm_ipc_port *msm_ipc_router_lookup_local_port(uint32_t port_id)
 	int key = (port_id & (LP_HASH_SIZE - 1));
 	struct msm_ipc_port *port_ptr;
 
-	mutex_lock(&local_ports_lock);
 	list_for_each_entry(port_ptr, &local_ports[key], list) {
 		if (port_ptr->this_port.port_id == port_id) {
-			mutex_unlock(&local_ports_lock);
 			return port_ptr;
 		}
 	}
-	mutex_unlock(&local_ports_lock);
 	return NULL;
 }
 
@@ -1229,7 +1223,7 @@ static int process_control_msg(struct msm_ipc_router_xprt_info *xprt_info,
 
 		xprt_info->initialized = 1;
 
-		/* Send list of servers one at a time */
+		
 		msm_ipc_router_send_server_list(xprt_info);
 
 		if (first) {
@@ -1338,7 +1332,7 @@ static int process_control_msg(struct msm_ipc_router_xprt_info *xprt_info,
 		post_control_ports(pkt);
 		break;
 	case IPC_ROUTER_CTRL_CMD_PING:
-		/* No action needed for ping messages received */
+		
 		RR("o PING\n");
 		break;
 	default:
@@ -1432,16 +1426,19 @@ static void do_read_data(struct work_struct *work)
 	resume_tx_node_id = hdr->dst_node_id;
 	resume_tx_port_id = hdr->dst_port_id;
 
+	rport_ptr = msm_ipc_router_lookup_remote_port(hdr->src_node_id,
+						      hdr->src_port_id);
+
+	mutex_lock(&local_ports_lock);
 	port_ptr = msm_ipc_router_lookup_local_port(hdr->dst_port_id);
 	if (!port_ptr) {
 		pr_err("%s: No local port id %08x\n", __func__,
 			hdr->dst_port_id);
+		mutex_unlock(&local_ports_lock);
 		release_pkt(pkt);
 		goto process_done;
 	}
 
-	rport_ptr = msm_ipc_router_lookup_remote_port(hdr->src_node_id,
-						      hdr->src_port_id);
 	if (!rport_ptr) {
 		rport_ptr = msm_ipc_router_create_remote_port(
 							hdr->src_node_id,
@@ -1449,6 +1446,7 @@ static void do_read_data(struct work_struct *work)
 		if (!rport_ptr) {
 			pr_err("%s: Remote port %08x:%08x creation failed\n",
 				__func__, hdr->src_node_id, hdr->src_port_id);
+			mutex_unlock(&local_ports_lock);
 			goto process_done;
 		}
 	}
@@ -1459,7 +1457,9 @@ static void do_read_data(struct work_struct *work)
 		list_add_tail(&pkt->list, &port_ptr->port_rx_q);
 		wake_up(&port_ptr->port_rx_wait_q);
 		mutex_unlock(&port_ptr->port_rx_q_lock);
+		mutex_unlock(&local_ports_lock);
 	} else {
+		mutex_lock(&port_ptr->port_rx_q_lock);
 		src_addr = kmalloc(sizeof(struct msm_ipc_port_addr),
 				   GFP_KERNEL);
 		if (src_addr) {
@@ -1467,8 +1467,10 @@ static void do_read_data(struct work_struct *work)
 			src_addr->port_id = hdr->src_port_id;
 		}
 		skb_pull(head_skb, IPC_ROUTER_HDR_SIZE);
+		mutex_unlock(&local_ports_lock);
 		port_ptr->notify(MSM_IPC_ROUTER_READ_CB, pkt->pkt_fragment_q,
 				 src_addr, port_ptr->priv);
+		mutex_unlock(&port_ptr->port_rx_q_lock);
 		pkt->pkt_fragment_q = NULL;
 		src_addr = NULL;
 		release_pkt(pkt);
@@ -1628,9 +1630,11 @@ static int loopback_data(struct msm_ipc_port *src,
 	hdr->dst_port_id = port_id;
 	pkt->length += IPC_ROUTER_HDR_SIZE;
 
+	mutex_lock(&local_ports_lock);
 	port_ptr = msm_ipc_router_lookup_local_port(port_id);
 	if (!port_ptr) {
 		pr_err("%s: Local port %d not present\n", __func__, port_id);
+		mutex_unlock(&local_ports_lock);
 		release_pkt(pkt);
 		return -ENODEV;
 	}
@@ -1640,6 +1644,7 @@ static int loopback_data(struct msm_ipc_port *src,
 	list_add_tail(&pkt->list, &port_ptr->port_rx_q);
 	wake_up(&port_ptr->port_rx_wait_q);
 	mutex_unlock(&port_ptr->port_rx_q_lock);
+	mutex_unlock(&local_ports_lock);
 
 	return pkt->length;
 }
@@ -1771,7 +1776,7 @@ int msm_ipc_router_send_to(struct msm_ipc_port *src,
 		return -EINVAL;
 	}
 
-	/* Resolve Address*/
+	
 	if (dest->addrtype == MSM_IPC_ADDR_ID) {
 		dst_node_id = dest->addr.port_addr.node_id;
 		dst_port_id = dest->addr.port_addr.port_id;
@@ -1797,7 +1802,7 @@ int msm_ipc_router_send_to(struct msm_ipc_port *src,
 		return ret;
 	}
 
-	/* Achieve Flow control */
+	
 	rport_ptr = msm_ipc_router_lookup_remote_port(dst_node_id,
 						      dst_port_id);
 	if (!rport_ptr) {
@@ -1932,6 +1937,10 @@ int msm_ipc_router_close_port(struct msm_ipc_port *port_ptr)
 		return -EINVAL;
 
 	if (port_ptr->type == SERVER_PORT || port_ptr->type == CLIENT_PORT) {
+		mutex_lock(&local_ports_lock);
+		list_del(&port_ptr->list);
+		mutex_unlock(&local_ports_lock);
+
 		if (port_ptr->type == SERVER_PORT) {
 			msg.cmd = IPC_ROUTER_CTRL_CMD_REMOVE_SERVER;
 			msg.srv.service = port_ptr->port_name.service;
@@ -1950,6 +1959,10 @@ int msm_ipc_router_close_port(struct msm_ipc_port *port_ptr)
 		}
 		broadcast_ctl_msg(&msg);
 		broadcast_ctl_msg_locally(&msg);
+	} else if (port_ptr->type == CONTROL_PORT) {
+		mutex_lock(&control_ports_lock);
+		list_del(&port_ptr->list);
+		mutex_unlock(&control_ports_lock);
 	}
 
 	mutex_lock(&port_ptr->port_rx_q_lock);
@@ -1969,17 +1982,6 @@ int msm_ipc_router_close_port(struct msm_ipc_port *port_ptr)
 			msm_ipc_router_destroy_server(server,
 				port_ptr->this_port.node_id,
 				port_ptr->this_port.port_id);
-		mutex_lock(&local_ports_lock);
-		list_del(&port_ptr->list);
-		mutex_unlock(&local_ports_lock);
-	} else if (port_ptr->type == CLIENT_PORT) {
-		mutex_lock(&local_ports_lock);
-		list_del(&port_ptr->list);
-		mutex_unlock(&local_ports_lock);
-	} else if (port_ptr->type == CONTROL_PORT) {
-		mutex_lock(&control_ports_lock);
-		list_del(&port_ptr->list);
-		mutex_unlock(&control_ports_lock);
 	}
 
 	wake_lock_destroy(&port_ptr->port_rx_wake_lock);
@@ -2022,6 +2024,7 @@ int msm_ipc_router_bind_control_port(struct msm_ipc_port *port_ptr)
 	return 0;
 }
 
+#ifdef CONFIG_MSM8960_ONLY
 int msm_ipc_router_lookup_server_name(struct msm_ipc_port_name *srv_name,
 				struct msm_ipc_port_addr *srv_addr,
 				int num_entries_in_array,
@@ -2029,7 +2032,7 @@ int msm_ipc_router_lookup_server_name(struct msm_ipc_port_name *srv_name,
 {
 	struct msm_ipc_server *server;
 	struct msm_ipc_server_port *server_port;
-	int key, i = 0; /*num_entries_found*/
+	int key, i = 0; 
 
 	if (!srv_name) {
 		pr_err("%s: Invalid srv_name\n", __func__);
@@ -2067,6 +2070,59 @@ int msm_ipc_router_lookup_server_name(struct msm_ipc_port_name *srv_name,
 
 	return i;
 }
+
+#else
+
+int msm_ipc_router_lookup_server_name(struct msm_ipc_port_name *srv_name,
+				struct msm_ipc_server_info *srv_info,
+				int num_entries_in_array,
+				uint32_t lookup_mask)
+{
+	struct msm_ipc_server *server;
+	struct msm_ipc_server_port *server_port;
+	int key, i = 0; 
+
+	if (!srv_name) {
+		pr_err("%s: Invalid srv_name\n", __func__);
+		return -EINVAL;
+	}
+
+	if (num_entries_in_array && !srv_info) {
+		pr_err("%s: srv_info NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	mutex_lock(&server_list_lock);
+	if (!lookup_mask)
+		lookup_mask = 0xFFFFFFFF;
+	for (key = 0; key < SRV_HASH_SIZE; key++) {
+		list_for_each_entry(server, &server_list[key], list) {
+			if ((server->name.service != srv_name->service) ||
+			    ((server->name.instance & lookup_mask) !=
+				srv_name->instance))
+				continue;
+
+			list_for_each_entry(server_port,
+				&server->server_port_list, list) {
+				if (i < num_entries_in_array) {
+					srv_info[i].node_id =
+					  server_port->server_addr.node_id;
+					srv_info[i].port_id =
+					  server_port->server_addr.port_id;
+					srv_info[i].service =
+					  server->name.service;
+					srv_info[i].instance =
+					  server->name.instance;
+				}
+				i++;
+			}
+		}
+	}
+	mutex_unlock(&server_list_lock);
+
+	return i;
+}
+#endif 
 
 int msm_ipc_router_close(void)
 {
@@ -2313,7 +2369,7 @@ static int msm_ipc_router_add_xprt(struct msm_ipc_router_xprt *xprt)
 	struct msm_ipc_router_xprt_info *xprt_info;
 	struct msm_ipc_routing_table_entry *rt_entry;
 
-	xprt_info = kmalloc(sizeof(struct msm_ipc_router_xprt_info),
+	xprt_info = kzalloc(sizeof(struct msm_ipc_router_xprt_info),
 			    GFP_KERNEL);
 	if (!xprt_info)
 		return -ENOMEM;
