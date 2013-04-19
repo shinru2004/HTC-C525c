@@ -131,6 +131,7 @@ int get_restart_level()
 }
 EXPORT_SYMBOL(get_restart_level);
 
+int set_ramdump_reason(char *reason);
 int ssr_have_set_restart_reason;
 
 void ssr_set_restart_reason(char *reason)

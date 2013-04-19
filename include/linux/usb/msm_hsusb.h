@@ -24,7 +24,7 @@
 #include <linux/usb/otg.h>
 #include <linux/wakelock.h>
 #include <mach/board.h>
-#include <linux/pm_qos.h>
+#include <linux/pm_qos_params.h>
 #include <linux/hrtimer.h>
 
 #define MSM_PIPE_ID_MASK		(0x1F)
